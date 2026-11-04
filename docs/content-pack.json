@@ -1,0 +1,22 @@
+{
+  "id": "ping-services-stub",
+  "title": "Ping Services Stub",
+  "version": "1",
+  "summary": "One stub exercising every shared Ping service: local shared PingFederate, PingGateway, Privilege Agent Gateway, PingOne SaaS, PingOne Privilege console, and the SE-K8s PingFederate. One real, read-only call per service.",
+  "audience": "SEs and demo builders verifying the shared stack after setup",
+  "stories": [
+    {
+      "id": "S1",
+      "title": "The whole shared stack, one page",
+      "cast": { "person": "the demo builder", "agent": "the stub" },
+      "steps": [
+        "Open the stub: it probes all six services",
+        "Exercise PingFederate: discovery + JWKS",
+        "Exercise PingGateway: the 401 that proves enforcement",
+        "Exercise PingOne: worker token + populations",
+        "Flip Mock: the page goes fully offline"
+      ]
+    }
+  ],
+  "verticals": ["generic", "banking", "airline"]
+}

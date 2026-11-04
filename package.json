@@ -1,0 +1,26 @@
+{
+  "name": "ping-services-stub-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LAB stub that exercises every shared Ping service the family deploys: shared PingFederate, PingGateway, Privilege Agent Gateway, PingOne (SaaS), PingOne Privilege (SaaS console), plus the SE-K8s PingFederate. Probes, health contract, doctor, Reset, Mock/Real toggle.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "start": "node server/src/index.js",
+    "dev": "node --watch server/src/index.js",
+    "test": "SERVICE_MODE=mock STANDALONE_ENV=/nonexistent/.env node --test test/*.test.js",
+    "doctor": "node server/src/doctor.js",
+    "reset": "node server/src/reset.js",
+    "build": "echo 'single-page server-rendered UI; nothing to build'",
+    "e2e": "node scripts/e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.58.2"
+  },
+  "dependencies": {
+    "express": "^5.3.0"
+  }
+}

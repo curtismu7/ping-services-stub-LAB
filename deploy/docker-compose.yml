@@ -1,0 +1,19 @@
+# Ping Services Stub — loopback-only, joins the shared ping-shared network (rule 20).
+name: ping-services-stub
+services:
+  stub:
+    build: ..
+    container_name: ping-services-stub
+    ports:
+      - "127.0.0.1:6300:6300"
+    environment:
+      PORT: "6300"
+      HOST: "0.0.0.0"
+      LAB_ALLOWED_HOSTS: local.ping-devops.com
+      STANDALONE_ENV: /settings/.env
+    volumes:
+      - ${STANDALONE_ENV:-/Users/cmuir/Development/.env}:/settings/.env:ro
+    extra_hosts:
+      - "local.ping-devops.com:host-gateway"
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
