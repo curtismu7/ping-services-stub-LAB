@@ -6,7 +6,7 @@ import { loadSettings } from './settings.js';
 
 const PF_URL = () => process.env.TRACE_PF_URL || 'https://local.ping-devops.com:9031';
 const CLIENT = () => process.env.TRACE_PF_CLIENT_ID || 'id-jag-kit';
-const SECRET = () => process.env.TRACE_PF_CLIENT_SECRET || '';
+const SECRET = () => process.env.TRACE_PF_CLIENT_SECRET || process.env.PF_EXCHANGE_CLIENT_SECRET || '';
 
 const FLOW_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 3;

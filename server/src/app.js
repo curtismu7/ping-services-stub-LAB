@@ -293,7 +293,12 @@ document.getElementById('tt-signin-go').onclick = async () => {
   if (!r.ok) { document.getElementById('tt-signin-state').textContent = (d.detail || d.error); return; }
   document.getElementById('tt-signin-state').textContent = 'Signed in.';
   document.getElementById('tt-pass').value = '';
-  showTrace(d.accessToken);
+  // The access token may be opaque (this PF mints opaque ATs); trace the ID
+  // token instead and say so, rather than showing a dead end.
+  const at = d.accessToken || {};
+  if (at.verdict === 'not a JWT' && d.idToken && d.idToken.checks) {
+    showTrace({ ...d.idToken, grantedBy: d.grantedBy + ' — access token is opaque (not a JWT); showing the ID token instead', issuer: d.issuer });
+  } else showTrace(d.accessToken);
 };
 </script>
 </body></html>`;
