@@ -10,6 +10,7 @@ services:
       PORT: "6300"
       HOST: "0.0.0.0"
       LAB_ALLOWED_HOSTS: local.ping-devops.com
+      PROBE_HOST: host.docker.internal
       STANDALONE_ENV: /settings/.env
     volumes:
       - ${STANDALONE_ENV:-/Users/cmuir/Development/.env}:/settings/.env:ro

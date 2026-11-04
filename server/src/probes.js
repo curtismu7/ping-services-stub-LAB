@@ -1,13 +1,9 @@
 // Service probes — reuse before spawn (rule 20). Wraps the shared ping-shared
 // probe contract and adds the SE-K8s PingFederate and PingOne-Privilege.
 // Each probe returns { product, url, ok, detail }.
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import net from 'node:net';
 import { loadSettings } from './settings.js';
 
-const exec = promisify(execFile);
-const PROBE = new URL('../../../../../ping-shared/probe.mjs', import.meta.url).pathname;
 
 function tcpProbe(host, port, timeoutMs = 3000) {
   return new Promise((resolve) => {
@@ -51,14 +47,19 @@ async function probePrivilegeConsole(settings) {
   return { product: 'pingone-privilege', url, ok: r.ok, status: r.status, detail: 'SaaS console reachable = telemetry only; registration stays manual' };
 }
 
-// The three Docker products go through the shared ping-shared probe (labels + health).
+// The three Docker products are probed directly (in-process, works inside Docker):
+// a TCP connect to the published loopback port, exactly what the shared probe checks.
+const SHARED_PORTS = {
+  pingfederate: { port: 9031, url: '127.0.0.1:9031/pf/heartbeat.ping (host)' },
+  pinggateway: { port: 3036, url: '127.0.0.1:3036/mcp (host)' },
+  'privilege-gateway': { port: 8623, url: '127.0.0.1:8623/ (host)' },
+};
+
 async function probeShared(product) {
-  try {
-    const { stdout } = await exec('node', [PROBE, product], { timeout: 15_000 });
-    return { product, url: (stdout.match(/at (\S+)/) || [])[1] || '', ok: true, detail: stdout.trim().split('\n')[0] };
-  } catch (e) {
-    return { product, url: '', ok: false, detail: (e.stderr || e.message).trim().split('\n')[0] };
-  }
+  const t = SHARED_PORTS[product];
+  const host = process.env.PROBE_HOST || '127.0.0.1';
+  const up = await tcpProbe(host, t.port);
+  return { product, url: t.url, ok: up, detail: up ? `listening on ${host}:${t.port}` : `nothing on ${host}:${t.port} (start the shared stack)` };
 }
 
 export async function probeAll(settings = loadSettings()) {
