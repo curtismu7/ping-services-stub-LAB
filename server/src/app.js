@@ -6,6 +6,8 @@ import {
   exercisePingOne, exercisePingFederate, exercisePingGateway,
   exercisePrivilegeGateway, exercisePrivilegeConsole, exerciseSePf,
 } from './exercises.js';
+import { getPingOneToken, getPfM2mToken, traceToken } from './tokenTrace.js';
+import { pfSigninStart, pfSigninCredentials } from './pfSignin.js';
 
 // SERVICE_MODE: 'real' (default when settings exist) or 'mock' (no outbound calls;
 // probes return canned offline answers). The toggle (rule 19) switches at runtime.
@@ -88,6 +90,59 @@ export function createApp({ health = createHealth() } = {}) {
     }
   });
 
+  // ---- Token trace (rule 19: Mock answers canned, Real hits the real issuers) ----
+  app.post('/api/token/:source', async (req, res) => {
+    if (state.mode === 'mock') {
+      return res.status(409).json({ error: 'mock_mode', detail: 'Token trace is real-only: there is nothing honest to show from a canned token. Switch to Real.' });
+    }
+    try {
+      const got = req.params.source === 'pingone' ? await getPingOneToken(settings)
+        : req.params.source === 'pf-m2m' ? await getPfM2mToken(settings)
+        : null;
+      if (!got) return res.status(404).json({ error: 'unknown_source', detail: 'token sources: pingone | pf-m2m' });
+      // PF M2M tokens may be opaque (reference) — trace handles that by reporting the decode failure honestly.
+      const trace = await traceToken(got.token);
+      res.json({ grantedBy: got.grantedBy, issuer: got.issuer, ...trace });
+    } catch (e) {
+      res.status(e.status || 502).json({ error: e.code || 'token_error', detail: e.message });
+    }
+  });
+
+  app.post('/api/trace', async (req, res) => {
+    const { token } = req.body || {};
+    if (typeof token !== 'string' || !token.trim() || token.length > 8192) return res.status(400).json({ error: 'invalid_request', detail: 'body must be { token: "..." }' });
+    try {
+      res.json(await traceToken(token.trim()));
+    } catch (e) {
+      res.status(500).json({ error: 'trace_error', detail: e.message });
+    }
+  });
+
+  // pi.flow sign-in at the shared PF (user path). Tokens stay server-side; the
+  // trace response shows decoded claims, never the raw token.
+  app.get('/auth/pf/start', async (req, res) => {
+    try {
+      res.json(await pfSigninStart());
+    } catch (e) {
+      res.status(e.status || 502).json({ error: e.code || 'pf_error', detail: e.message });
+    }
+  });
+
+  app.post('/auth/pf/credentials', async (req, res) => {
+    const { flowId, username, password } = req.body || {};
+    if (typeof flowId !== 'string' || typeof username !== 'string' || typeof password !== 'string' || !flowId || !username || !password || username.length > 128 || password.length > 128) {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    try {
+      const got = await pfSigninCredentials({ flowId, username, password });
+      const trace = await traceToken(got.accessToken);
+      const idTrace = got.idToken ? await traceToken(got.idToken) : null;
+      res.json({ grantedBy: got.grantedBy, issuer: got.issuer, accessToken: { ...trace }, idToken: idTrace });
+    } catch (e) {
+      res.status(e.status || 502).json({ error: e.code || 'pf_error', detail: e.message });
+    }
+  });
+
   // Reset (rule 3): clears in-memory mode back to the default; no persistent state exists.
   app.post('/api/reset', (req, res) => {
     settings = loadSettings();
@@ -121,6 +176,9 @@ td, th { border: 1px solid color-mix(in srgb, canvastext 20%, transparent); padd
 .ok { color: green; } .fail { color: crimson; }
 code { font-family: ui-monospace, monospace; font-size: .85em; }
 pre { background: color-mix(in srgb, canvastext 6%, transparent); padding: .75rem; border-radius: 6px; overflow-x: auto; }
+.tt-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .5rem 0; }
+#tt-signin-dialog { border: 1px solid color-mix(in srgb, canvastext 25%, transparent); border-radius: 6px; padding: .75rem; margin: .5rem 0; display: grid; gap: .4rem; max-width: 24rem; }
+#tt-signin-dialog[hidden] { display: none; }
 </style></head>
 <body>
 <header>
@@ -144,6 +202,26 @@ pre { background: color-mix(in srgb, canvastext 6%, transparent); padding: .75re
   </tbody></table>
   <h2>Last exercise result</h2>
   <pre id="result">Press an Exercise button.</pre>
+  <h2>Token trace</h2>
+  <p>Get a token from a real issuer, then trace it the way a resource server would: decode, verify the signature against the issuer's JWKS, and check the rules (typ, iss, exp, nbf, sub, scope, client_id) one by one. Tokens stay server-side; you see decoded claims only.</p>
+  <div class="tt-actions">
+    <button id="tt-p1">Get PingOne worker token (M2M)</button>
+    <button id="tt-pf-m2m" title="Password grant at the SE PingFederate; needs TRACE_PF_M2M_* env">Get PF token (M2M, password grant)</button>
+    <span id="tt-signin">
+      <button id="tt-pf-signin">Sign in at PingFederate</button>
+    </span>
+  </div>
+  <div id="tt-signin-dialog" hidden>
+    <label>Username <input id="tt-user" autocomplete="username"></label>
+    <label>Password <input id="tt-pass" type="password" autocomplete="current-password"></label>
+    <button id="tt-signin-go">Sign in</button>
+    <span id="tt-signin-state" role="status"></span>
+  </div>
+  <pre id="tt-result">Get a token or paste one below.</pre>
+  <label style="display:block">Or trace a token you already have (it is sent to this server, which decodes and validates it — nothing else):
+    <textarea id="tt-paste" rows="3" style="width:100%" placeholder="eyJ..."></textarea>
+  </label>
+  <button id="tt-trace">Trace pasted token</button>
 </main>
 <script>
 async function refresh() {
@@ -173,6 +251,50 @@ async function setMode(m) {
 }
 document.getElementById('reset-btn').onclick = async () => { await fetch('/api/reset', { method: 'POST' }); location.reload(); };
 refresh();
+
+// ---- token trace ----
+function showTrace(d) {
+  const NL = String.fromCharCode(10);
+  const el = document.getElementById('tt-result');
+  if (d.checks) {
+    const rows = d.checks.map(c => (c.ok ? '\u2705' : '\u274c') + ' ' + c.rule + ': ' + c.detail).join(NL);
+    const head = (d.grantedBy ? 'Granted by ' + d.grantedBy + ' (issuer ' + d.issuer + ')' + NL + NL : '');
+    const claims = d.claims ? NL + NL + 'Claims:' + NL + JSON.stringify(d.claims, null, 2) : '';
+    el.textContent = head + 'VERDICT: ' + d.verdict + ' (' + d.passed + '/' + d.total + ' checks pass)' + NL + NL + rows + claims;
+  } else el.textContent = JSON.stringify(d, null, 2);
+}
+async function post(url, body) {
+  const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
+  const d = await r.json();
+  if (!r.ok) { document.getElementById('tt-result').textContent = 'ERROR ' + r.status + ': ' + (d.detail || d.error); return null; }
+  return d;
+}
+document.getElementById('tt-p1').onclick = async () => { const d = await post('/api/token/pingone'); if (d) showTrace(d); };
+document.getElementById('tt-pf-m2m').onclick = async () => { const d = await post('/api/token/pf-m2m'); if (d) showTrace(d); };
+document.getElementById('tt-trace').onclick = async () => {
+  const t = document.getElementById('tt-paste').value.trim();
+  if (!t) return;
+  const d = await post('/api/trace', { token: t });
+  if (d) showTrace(d);
+};
+let pfFlowId = null;
+document.getElementById('tt-pf-signin').onclick = async () => {
+  const r = await fetch('/auth/pf/start');
+  const d = await r.json();
+  if (!r.ok) { document.getElementById('tt-result').textContent = 'ERROR ' + r.status + ': ' + (d.detail || d.error); return; }
+  pfFlowId = d.flowId;
+  document.getElementById('tt-signin-dialog').hidden = false;
+  document.getElementById('tt-signin-state').textContent = 'Flow started at PingFederate.';
+};
+document.getElementById('tt-signin-go').onclick = async () => {
+  if (!pfFlowId) return;
+  const r = await fetch('/auth/pf/credentials', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flowId: pfFlowId, username: document.getElementById('tt-user').value, password: document.getElementById('tt-pass').value }) });
+  const d = await r.json();
+  if (!r.ok) { document.getElementById('tt-signin-state').textContent = (d.detail || d.error); return; }
+  document.getElementById('tt-signin-state').textContent = 'Signed in.';
+  document.getElementById('tt-pass').value = '';
+  showTrace(d.accessToken);
+};
 </script>
 </body></html>`;
 }

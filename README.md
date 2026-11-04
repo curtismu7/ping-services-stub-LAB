@@ -26,6 +26,19 @@ Docker (OrbStack; reads `~/Development/.env` read-only):
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
+## Token trace
+
+**Get a token, then trace it** the way a resource server would — without the token ever being copied through a chat or shown raw:
+
+- **Get PingOne worker token (M2M)**: `client_credentials` with the shared settings file's worker client; the trace decodes it, verifies the RS256 signature against PingOne's JWKS, and checks typ/iss/exp/nbf/sub/scope/client_id rule by rule.
+- **Get PF token (M2M, password grant)**: guarded behind `TRACE_PF_M2M_*` env (it sends a password); traces an SE-PF token, signature verified against the SE PF's JWKS.
+- **Sign in at PingFederate**: pi.flow at the shared PF (`id-jag-kit`, code + PKCE); the browser never sees a token — the server holds it, traces the ID token, and reports the access token honestly (this PF's ATM mints opaque access tokens, so the trace says "not a JWT" rather than pretending).
+- **Trace a pasted token**: paste anything; the server decodes and validates it, nothing else.
+
+Tokens stay server-side; the page shows decoded claims and rule-by-rule pass/fail only. The trace never replays the token against a resource server.
+
+To trace the shared local PF (self-signed cert), run the stub with `NODE_EXTRA_CA_CERTS=deploy/pf-rootCA.pem TRACE_PF_URL=https://127.0.0.1:4732 TRACE_PF_CLIENT_ID=id-jag-kit TRACE_PF_CLIENT_SECRET=...` (the secret lives in `~/.config/demo-kit/provisioning.json` under `pingfederate.idJagKitClientSecret`).
+
 ## Mock / Real (rule 19)
 
 - **Real** (default when `~/Development/.env` has worker creds): probes + exercises hit the real services, one read-only call each.

@@ -27,6 +27,12 @@ try {
   await page.waitForTimeout(1500);
   const afterReset = await page.locator('table#services tbody tr td:nth-child(3)').first().innerText();
   if (!/UP/.test(afterReset)) { console.error('FAIL: services not refreshed after Reset'); fails++; }
+  // Token trace section exists; in mock mode the buttons answer honestly
+  const tt = await page.locator('#tt-p1').count();
+  if (tt < 1) { console.error('FAIL: token trace section missing'); fails++; }
+  await page.locator('#tt-p1').click();
+  await page.waitForFunction(() => /ERROR|mock/i.test(document.getElementById('tt-result').innerText), null, { timeout: 8000 })
+    .catch(() => { console.error('FAIL: trace did not answer in mock mode'); fails++; });
   console.log(fails ? `e2e: ${fails} failure(s)` : 'e2e: all checks passed');
   await browser.close();
   process.exit(fails ? 1 : 0);
