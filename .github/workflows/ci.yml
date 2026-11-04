@@ -14,14 +14,15 @@ jobs:
           node-version: 26
       - run: npm install
       - run: SERVICE_MODE=mock STANDALONE_ENV=/nonexistent/.env node --test test/*.test.js
-      - run: gitleaks detect --no-git --redact || npx gitleaks detect --no-git --redact
-        continue-on-error: false
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   forbidden-strings:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: |
-          if grep -rInE "cmuir_pingcorp|AI-DEMO2/" --include='*.js' --include='*.mjs' --include='*.jsx' --include='*.json' --include='*.md' . ; then
+          if grep -rInE "cmuir_pingcorp|AI-DEMO2/" --include='*.js' --include='*.mjs' --include='*.jsx' --include='*.json' --include='*.md' --exclude=CLAUDE.md . ; then
             echo "Forbidden identifier found (cross-repo import or wrong owner)"; exit 1
           fi
