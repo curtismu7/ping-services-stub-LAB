@@ -4,7 +4,7 @@
   "name": "Ping Services Stub LAB",
   "tier": "Tester",
   "where": "installed",
-  "repo": "https://github.com/ping-sandbox/ping-services-stub-LAB",
+  "repo": "https://github.com/curtismu7/ping-services-stub-LAB",
   "composeFile": "deploy/docker-compose.yml",
   "url": "http://127.0.0.1:6300",
   "description": "One stub exercising every shared Ping service the family deploys: local shared PingFederate, PingGateway, Privilege Agent Gateway, PingOne (SaaS), PingOne Privilege console, and the SE-K8s PingFederate. One real, read-only call per service; Mock/Real toggle; reuses shared infra (rule 20).",
