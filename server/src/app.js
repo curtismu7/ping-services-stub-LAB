@@ -8,6 +8,7 @@ import {
 } from './exercises.js';
 import { getPingOneToken, getPfM2mToken, traceToken } from './tokenTrace.js';
 import { pfSigninStart, pfSigninCredentials } from './pfSignin.js';
+import { shelfInfo } from './shelfLink.js';
 
 // SERVICE_MODE: 'real' (default when settings exist) or 'mock' (no outbound calls;
 // probes return canned offline answers). The toggle (rule 19) switches at runtime.
@@ -70,6 +71,7 @@ export function createApp({ health = createHealth() } = {}) {
   });
 
   app.get('/api/services', async (req, res) => {
+  app.get('/api/shelf', (_req, res) => { res.set('Cache-Control', 'no-store'); res.json(shelfInfo()); }); // the header "Shelf" button
     if (state.mode === 'mock') return res.json({ ...await servicesSnapshot(), mode: 'mock', services: MOCK_SERVICES });
     res.json(await servicesSnapshot());
   });
