@@ -9,7 +9,36 @@ One stub that exercises **every shared Ping service the family deploys** (rule 2
 | Privilege Agent Gateway (shared, local) | `127.0.0.1:8623` | root listener probe |
 | PingOne (SaaS) | `auth.pingone.<region>` | worker `client_credentials` + populations read |
 | PingOne Privilege (SaaS console) | `console.privilege.pingone.com` | reachability probe (registration stays console-manual) |
-| PingFederate (SE K8s, cmuir) | `https://cmuir-pf-acme.ping-devops.com` | discovery + heartbeat |
+| PingFederate (SE K8s, owner namespace) | host recorded in the owner notes | discovery + heartbeat |
+
+## Run from a clone
+
+Prerequisites: Node 26. Docker (OrbStack) only for the Docker form.
+
+```
+git clone https://github.com/curtismu7/ping-services-stub-LAB.git
+cd ping-services-stub-LAB
+npm ci
+npm run build
+npm run doctor
+npm start
+```
+
+## Ports, and what to do if the port is taken
+
+```
+Ports: ping-services-stub-LAB listens on 6300 (set with PORT, default 6300).
+Port range for this app: 6300-6399.
+
+If the port is taken:
+1. Find what is using it:
+   lsof -iTCP:6300 -sTCP:LISTEN -n -P
+2. If it is an old copy of this app, stop that process: kill <PID>.
+3. If it is something else, stop it, or start this app on another port:
+   PORT=<other port> npm start
+```
+
+Other variable: `HOST_PORT=6300` (Docker host port). Keep both inside 6300-6399.
 
 ## Run
 
