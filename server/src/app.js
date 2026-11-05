@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 // HTTP API: /api/health, /api/info, /api/mode, /api/services, /api/exercise/:product
 import express from 'express';
 import { createHealth, servicesSnapshot } from './health.js';
@@ -48,6 +49,7 @@ export function createApp({ health = createHealth() } = {}) {
   });
 
 
+  app.get('/standalone-ui.css', (_req, res) => { res.type('css').send(fs.readFileSync(new URL('../../standalone-ui.css', import.meta.url))); });
   app.get('/api/health', (req, res) => res.json(health.snapshot()));
 
   app.get('/api/info', (req, res) => {
@@ -163,8 +165,8 @@ export function createApp({ health = createHealth() } = {}) {
 function page(mode, realAvailable, settingsPath) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ping Services Stub</title><style>
-:root { color-scheme: light dark; }
+<title>Ping Services Stub</title><link rel="stylesheet" href="/standalone-ui.css"><style>
+:root { color-scheme: light dark; --status-ok: #1d7a43; --danger-text: #aa0005; --accent: #12538d; --panel: color-mix(in srgb, canvastext 4%, transparent); }
 body { font-family: system-ui, sans-serif; margin: 0; background: canvas; color: canvastext; }
 header { padding: 1rem; border-bottom: 1px solid color-mix(in srgb, canvastext 15%, transparent); display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
 h1 { font-size: 1.1rem; margin: 0; }
@@ -175,7 +177,7 @@ button[aria-pressed="true"] { background: highlight; color: highlighttext; }
 button:disabled { opacity: .5; cursor: not-allowed; }
 table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
 td, th { border: 1px solid color-mix(in srgb, canvastext 20%, transparent); padding: .4rem .6rem; text-align: left; }
-.ok { color: green; } .fail { color: crimson; }
+.ok { color: var(--status-ok); } .fail { color: var(--danger-text); }
 code { font-family: ui-monospace, monospace; font-size: .85em; }
 pre { background: color-mix(in srgb, canvastext 6%, transparent); padding: .75rem; border-radius: 6px; overflow-x: auto; }
 .tt-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .5rem 0; }
@@ -185,7 +187,7 @@ pre { background: color-mix(in srgb, canvastext 6%, transparent); padding: .75re
 <body>
 <header>
   <h1>Ping Services Stub</h1>
-  <span class="note" style="margin:0">SIMULATION: this stub makes one read-only call per service. It provisions nothing.</span>
+  <span class="note" role="note" style="margin:0">SIMULATION: this stub makes one read-only call per service. It provisions nothing.</span>
   <span>Mode:
     <button id="mock-btn" aria-pressed="${mode === 'mock'}">Mock</button>
     <button id="real-btn" aria-pressed="${mode === 'real'}" ${realAvailable ? '' : 'disabled'} title="${realAvailable ? '' : 'No settings at ' + settingsPath}">Real</button>
