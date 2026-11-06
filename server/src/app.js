@@ -183,7 +183,11 @@ pre { background: color-mix(in srgb, canvastext 6%, transparent); padding: .75re
 .tt-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .5rem 0; }
 #tt-signin-dialog { border: 1px solid color-mix(in srgb, canvastext 25%, transparent); border-radius: 6px; padding: .75rem; margin: .5rem 0; display: grid; gap: .4rem; max-width: 24rem; }
 #tt-signin-dialog[hidden] { display: none; }
-</style></head>
+.shell-theme { display: inline-flex; gap: .4rem; align-items: center; font-size: .85rem; color: canvastext; }
+.shell-theme select { border: 1px solid color-mix(in srgb, canvastext 35%, transparent); background: var(--surface, canvas); color: var(--text, canvastext); border-radius: 5px; padding: .3rem .5rem; font: inherit; }
+</style>
+<script>(function(){try{var t=localStorage.getItem('pss.theme');if(t&&t!=='auto')document.documentElement.dataset.theme=t;}catch(e){}})();</script>
+</head>
 <body>
 <header>
   <h1>Ping Services Stub</h1>
@@ -193,6 +197,13 @@ pre { background: color-mix(in srgb, canvastext 6%, transparent); padding: .75re
     <button id="real-btn" aria-pressed="${mode === 'real'}" ${realAvailable ? '' : 'disabled'} title="${realAvailable ? '' : 'No settings at ' + settingsPath}">Real</button>
   </span>
   <button id="reset-btn">Reset</button>
+  <label class="shell-theme">Theme
+    <select id="theme-select">
+      <option value="auto">Auto</option>
+      <option value="light">Light</option>
+      <option value="dark">Dark</option>
+    </select>
+  </label>
 </header>
 <main>
   <p>One stub, six shared services. Each row runs one real, read-only call — the minimum that proves the wiring.</p>
@@ -305,5 +316,6 @@ document.getElementById('tt-signin-go').onclick = async () => {
   } else showTrace(d.accessToken);
 };
 </script>
+<script>(function(){var sel=document.getElementById('theme-select');try{sel.value=localStorage.getItem('pss.theme')||'auto';}catch(e){sel.value='auto';}sel.addEventListener('change',function(){var v=sel.value;if(v==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=v;try{localStorage.setItem('pss.theme',v);}catch(e){}});})();</script>
 </body></html>`;
 }
