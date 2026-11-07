@@ -27,7 +27,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - run: |
           if grep -rInE "cmuir_pingcorp|AI-DEMO2/" --include='*.js' --include='*.mjs' --include='*.jsx' --include='*.json' --include='*.md' --exclude=CLAUDE.md . ; then
             echo "Forbidden identifier found (cross-repo import or wrong owner)"; exit 1
           fi
+      - name: No AI attribution in the tree or recent commits
+        run: bash scripts/check-no-ai-attribution.sh
