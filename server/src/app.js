@@ -72,8 +72,9 @@ export function createApp({ health = createHealth() } = {}) {
     res.json({ mode: state.mode });
   });
 
-  app.get('/api/services', async (req, res) => {
   app.get('/api/shelf', (_req, res) => { res.set('Cache-Control', 'no-store'); res.json(shelfInfo()); }); // the header "Shelf" button
+
+  app.get('/api/services', async (req, res) => {
     if (state.mode === 'mock') return res.json({ ...await servicesSnapshot(), mode: 'mock', services: MOCK_SERVICES });
     res.json(await servicesSnapshot());
   });
@@ -257,6 +258,14 @@ async function refresh() {
     row.querySelector('td.x').replaceChildren(btn);
   }
 }
+// Shelf button (family ShelfLink behaviour): shown only when GET /api/shelf returns a URL.
+fetch('/api/shelf', { credentials: 'omit', headers: { Accept: 'application/json' } }).then((r) => (r.ok ? r.json() : null)).then((d) => {
+  if (!d || !d.shelfUrl) return;
+  const a = document.createElement('a');
+  a.className = 'shelf-link'; a.href = d.shelfUrl; a.target = '_blank'; a.rel = 'noreferrer';
+  a.title = 'Open the demo shelf (launcher)'; a.textContent = 'Shelf';
+  document.querySelector('header').appendChild(a);
+}).catch(() => {});
 document.getElementById('mock-btn').onclick = () => setMode('mock');
 document.getElementById('real-btn').onclick = () => setMode('real');
 async function setMode(m) {

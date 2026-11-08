@@ -8,6 +8,7 @@ services:
       - "127.0.0.1:6300:6300"
     environment:
       PORT: "6300"
+      SHELF_URL: ${SHELF_URL:-http://127.0.0.1:4400}
       HOST: "0.0.0.0"
       LAB_ALLOWED_HOSTS: local.ping-devops.com
       PROBE_HOST: host.docker.internal
