@@ -16,8 +16,9 @@ Privilege GW, PingOne, P1-Privilege console, SE-K8s PF). Proves wiring, not feat
   directions without a restart (the page reloads data; server state switches live).
 - **Settings** come from `~/Development/.env` (ping-shared rule 94 contract).
   Agents never use live creds — the tests stub them.
-- **Loopback-only bind** (PORT 6300), Host check allows 127.0.0.1/localhost/
-  local.ping-devops.com (+LAB_ALLOWED_HOSTS).
+- **Loopback-only bind** (PORT 6300), Host check allows 127.0.0.1/localhost/[::1] and
+  `<LAB_ALLOWED_HOSTS name>:<PORT>` (compose defaults it to the lab-proxy's name). Writes
+  are same-origin; on an allowed Host only, Origin may equal X-Forwarded-Proto://X-Forwarded-Host.
 - **SE PF** (`cmuir-pf-acme.ping-devops.com`) is publicly CA-signed — plain fetch,
   no CA override. Local PFs are mkcert — the tests never contact them.
 - Never add identifiers from other repos (forbidden-strings: cmuir_pingcorp,

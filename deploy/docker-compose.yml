@@ -10,11 +10,15 @@ services:
       PORT: "6300"
       SHELF_URL: ${SHELF_URL:-http://127.0.0.1:4400}
       HOST: "0.0.0.0"
-      LAB_ALLOWED_HOSTS: local.ping-devops.com
+      # Names besides loopback the stub answers to (as <name>:6300). The default is the Host the family lab-proxy sends.
+      LAB_ALLOWED_HOSTS: ${LAB_ALLOWED_HOSTS:-ping-services-stub.local.ping-devops.com}
       PROBE_HOST: host.docker.internal
       STANDALONE_ENV: /settings/.env
     volumes:
-      - ${STANDALONE_ENV:-/Users/cmuir/Development/.env}:/settings/.env:ro
+      # The one shared settings file (optional; STANDALONE_ENV moves it). bootstrap.sh creates it. If it is missing, Docker
+      # creates an empty folder at that path on the host and mounts it; the stub then starts in Mock (settings.js reads
+      # only a regular file). Create the file first (touch it) to avoid that folder.
+      - ${STANDALONE_ENV:-${HOME}/Development/.env}:/settings/.env:ro
     extra_hosts:
       - "local.ping-devops.com:host-gateway"
       - "host.docker.internal:host-gateway"
