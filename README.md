@@ -1,5 +1,8 @@
 # Ping Services Stub LAB
 
+Tier: Tester.
+Repo: https://github.com/curtismu7/ping-services-stub-LAB
+
 One stub that exercises **every shared Ping service the family deploys** (rule 20, shared-first):
 
 | Service | Where | What the stub does |
