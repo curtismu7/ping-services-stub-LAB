@@ -35,19 +35,45 @@ const EXERCISERS = {
   'se-pingfederate': () => exerciseSePf(settings),
 };
 
-export function createApp({ health = createHealth() } = {}) {
+// LAB_ALLOWED_HOSTS: comma list of host names (no ports), each accepted in Host only as "<name>:<PORT>". Unset = loopback only.
+export function labProxyHosts(env = process.env) {
+  const names = String(env.LAB_ALLOWED_HOSTS || '').split(',').map((n) => n.trim().toLowerCase()).filter(Boolean);
+  for (const n of names) if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/.test(n)) throw new Error(`LAB_ALLOWED_HOSTS: "${n}" is not a host name`);
+  const port = Number(env.PORT || 6300);
+  return new Set(names.map((n) => `${n}:${port}`));
+}
+
+export function createApp({ health = createHealth(), proxyHosts = labProxyHosts() } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '64kb' }));
 
-  // Host check: loopback only by default (rule 2).
-  const allowed = new Set(['127.0.0.1', 'localhost', '[::1]', 'local.ping-devops.com', process.env.LAB_ALLOWED_HOSTS].filter(Boolean));
+  // Host check: loopback only by default (rule 2), plus "<LAB_ALLOWED_HOSTS name>:<PORT>" (the family lab-proxy).
+  const loopback = new Set(['127.0.0.1', 'localhost', '[::1]']);
   app.use((req, res, next) => {
-    const host = (req.headers.host || '').split(':')[0];
-    if (!allowed.has(host)) return res.status(403).send('forbidden host');
+    const raw = String(req.headers.host || '').toLowerCase();
+    const host = raw.startsWith('[') ? raw.slice(0, raw.indexOf(']') + 1) : raw.split(':')[0];
+    if (!loopback.has(host) && !proxyHosts.has(raw)) return res.status(403).send('forbidden host');
     next();
   });
 
+  // Same-origin writes (rule 2). A write that carries an Origin must match Host; or, on a LAB_ALLOWED_HOSTS Host only, equal
+  // X-Forwarded-Proto://X-Forwarded-Host (the lab-proxy's origin). Forwarded headers are ignored on any other Host.
+  app.use((req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+    const refuse = () => res.status(403).json({ error: 'cross_origin', message: 'writes must be same-origin' });
+    const site = req.headers['sec-fetch-site'];
+    if (site && site !== 'same-origin' && site !== 'none') return refuse();
+    const origin = req.headers.origin;
+    if (origin === undefined) return next();
+    const raw = String(req.headers.host || '').toLowerCase();
+    const xfh = String(req.headers['x-forwarded-host'] || '').trim().toLowerCase();
+    const xfp = String(req.headers['x-forwarded-proto'] || '').trim().toLowerCase();
+    if (proxyHosts.has(raw) && xfh !== '' && (xfp === 'https' || xfp === 'http') && origin === `${xfp}://${xfh}`) return next();
+    let same = false;
+    try { same = new URL(origin).host.toLowerCase() === raw; } catch { /* malformed */ }
+    return same ? next() : refuse();
+  });
 
   app.get('/standalone-ui.css', (_req, res) => { res.type('css').send(fs.readFileSync(new URL('../../standalone-ui.css', import.meta.url))); });
   app.get('/api/health', (req, res) => res.json(health.snapshot()));

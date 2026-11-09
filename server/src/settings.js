@@ -1,6 +1,6 @@
 // Shared settings loader — the family contract (ping-shared rule 94).
 // Reads ~/Development/.env (or STANDALONE_ENV) and the SE-PF override env.
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -17,7 +17,10 @@ export function loadSettings(envPath) {
   const p = envPath || process.env.STANDALONE_ENV || join(homedir(), 'Development', '.env');
   const out = { path: p, present: false, realAvailable: false };
   for (const k of KEYS) out[k] = '';
-  if (existsSync(p)) {
+  // A regular file only: Docker mounts an empty folder when the host file is missing.
+  let isFile = false;
+  try { isFile = statSync(p).isFile(); } catch { /* missing */ }
+  if (isFile) {
     out.present = true;
     for (const line of readFileSync(p, 'utf8').split('\n')) {
       const m = line.match(/^([A-Z_]+)=(.*)$/);
