@@ -219,18 +219,26 @@ pre { background: color-mix(in srgb, canvastext 6%, transparent); padding: .75re
 <header>
   <h1>Ping Services Stub</h1>
   <span class="note" role="note" style="margin:0">SIMULATION: this stub makes one read-only call per service. It provisions nothing.</span>
-  <span>Mode:
-    <button id="mock-btn" aria-pressed="${mode === 'mock'}">Mock</button>
-    <button id="real-btn" aria-pressed="${mode === 'real'}" ${realAvailable ? '' : 'disabled'} title="${realAvailable ? '' : 'No settings at ' + settingsPath}">Real</button>
-  </span>
-  <button id="reset-btn">Reset</button>
-  <label class="shell-theme">Theme
-    <select id="theme-select">
-      <option value="auto">Auto</option>
-      <option value="light">Light</option>
-      <option value="dark">Dark</option>
-    </select>
-  </label>
+  <nav class="top-menu" data-testid="top-menu" aria-label="Top menu" style="display:inline-flex;flex-direction:column;align-items:flex-end;gap:.55rem;background:#16181f;color:#fcfcfc;padding:.5rem .75rem;border-radius:10px;--ping-red:#d20e0f;--ping-red-deep:#aa0005;">
+    <div class="top-menu__row" style="display:inline-flex;align-items:center;gap:.5rem;">
+      <span style="font-size:.78rem;font-weight:600;opacity:.9">Mode:</span>
+      <button id="mock-btn" aria-pressed="${mode === 'mock'}">Mock</button>
+      <button id="real-btn" aria-pressed="${mode === 'real'}" ${realAvailable ? '' : 'disabled'} title="${realAvailable ? '' : 'No settings at ' + settingsPath}">Real</button>
+      <button id="reset-btn">Reset</button>
+    </div>
+    <div class="top-menu__row" style="display:inline-flex;align-items:center;gap:.5rem;">
+      <span style="font-size:.78rem;font-weight:600;opacity:.9">Theme:</span>
+      <select id="theme-select" style="height:32px;border-radius:8px;background:transparent;color:inherit;border:1px solid rgba(255,255,255,.35);padding:0 .4rem">
+        <option value="auto">Auto</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+      <span style="font-size:.78rem;font-weight:600;opacity:.9">Text size:</span>
+      <select id="font-select" aria-label="Font size" style="height:32px;border-radius:8px;background:transparent;color:inherit;border:1px solid rgba(255,255,255,.35);padding:0 .4rem"><option value="S">S</option><option value="M">M</option><option value="L">L</option></select>
+      <button type="button" id="font-minus" aria-label="Smaller text" style="height:32px;border-radius:8px;background:transparent;color:inherit;border:1px solid rgba(255,255,255,.35);padding:0 .6rem;cursor:pointer">A&minus;</button>
+      <button type="button" id="font-plus" aria-label="Larger text" style="height:32px;border-radius:8px;background:transparent;color:inherit;border:1px solid rgba(255,255,255,.35);padding:0 .6rem;cursor:pointer">A+</button>
+    </div>
+  </nav>
 </header>
 <main>
   <p>One stub, six shared services. Each row runs one real, read-only call — the minimum that proves the wiring.</p>
@@ -352,5 +360,13 @@ document.getElementById('tt-signin-go').onclick = async () => {
 };
 </script>
 <script>(function(){var sel=document.getElementById('theme-select');try{sel.value=localStorage.getItem('pss.theme')||'auto';}catch(e){sel.value='auto';}sel.addEventListener('change',function(){var v=sel.value;if(v==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=v;try{localStorage.setItem('pss.theme',v);}catch(e){}});})();</script>
-</body></html>`;
+<script>
+(function(){var STEP={S:"14px",M:"16px",L:"18px"},order=["S","M","L"];
+function apply(step){document.documentElement.style.fontSize=STEP[step]||"16px";try{localStorage.setItem("pss.font",step)}catch(e){}var s=document.getElementById("font-select");if(s)s.value=step;}
+var sel=document.getElementById("font-select");
+sel.addEventListener("change",function(){apply(sel.value)});
+document.getElementById("font-minus").addEventListener("click",function(){apply(order[Math.max(0,order.indexOf(sel.value)-1)])});
+document.getElementById("font-plus").addEventListener("click",function(){apply(order[Math.min(2,order.indexOf(sel.value)+1)])});
+apply(localStorage.getItem("pss.font")||"M");})();
+</script></body></html>`;
 }
