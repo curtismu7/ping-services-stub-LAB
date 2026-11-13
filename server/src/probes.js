@@ -47,22 +47,37 @@ async function probePrivilegeConsole(settings) {
   return { product: 'pingone-privilege', url, ok: r.ok, status: r.status, detail: 'SaaS console reachable = telemetry only; registration stays manual' };
 }
 
-// The three Docker products are probed directly (in-process, works inside Docker):
-// a TCP connect to the published loopback port, exactly what the shared probe checks.
+// The three Docker products are probed with a real HTTP call (not just a TCP connect):
+// a TCP connect reports UP while the port is held by a dead shim/proxy that answers 502
+// (the metadata shim in front of a stopped PingFederate did exactly that). The URL that
+// the HTTP probe checks is what the UP/DOWN cell shows.
 // privilege-gateway: since the 2026-11-12 v1.261112-NYL binary swap the mcpgw :8623
 // listener is GONE (the binary derives :443 from SERVER_URL); its published REST API
 // on 8620 is the port that still answers on the host.
 const SHARED_PORTS = {
-  pingfederate: { port: 9031, url: '127.0.0.1:9031/pf/heartbeat.ping (host)' },
-  pinggateway: { port: 3036, url: '127.0.0.1:3036/mcp (host)' },
-  'privilege-gateway': { port: 8620, url: '127.0.0.1:8620/ (host; mcpgw REST API, post-261112)' },
+  // The shared PF cert's SAN covers local.ping-devops.com only — a probe by IP or
+  // host.docker.internal dies on TLS before it can report the service's real state.
+  pingfederate: { host: 'local.ping-devops.com', port: 9031, url: '127.0.0.1:9031/pf/heartbeat.ping (host)', probe: '/pf/heartbeat.ping', ok: [200], tls: true },
+  pinggateway: { host: 'local.ping-devops.com', port: 3036, url: '127.0.0.1:3036/mcp (host)', probe: '/mcp', ok: [200, 401, 405], tls: true },
+  'privilege-gateway': { host: 'local.ping-devops.com', port: 8620, url: '127.0.0.1:8620/ (host; mcpgw REST API, post-261112)', probe: '/', ok: [200], tls: false },
 };
 
 async function probeShared(product) {
   const t = SHARED_PORTS[product];
-  const host = process.env.PROBE_HOST || '127.0.0.1';
+  const host = t.host;
+  const scheme = t.tls ? 'https' : 'http';
   const up = await tcpProbe(host, t.port);
-  return { product, url: t.url, ok: up, detail: up ? `listening on ${host}:${t.port}` : `nothing on ${host}:${t.port} (start the shared stack)` };
+  if (!up) return { product, url: t.url, ok: false, detail: `nothing on ${host}:${t.port} (start the shared stack)` };
+  // TCP is open: make the real call so a half-dead front (a shim, nginx, a proxy to a
+  // stopped container) reports DOWN, not UP.
+  try {
+    const init = t.probe === '/mcp' ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' } : {};
+    const r = await fetch(`${scheme}://${host}:${t.port}${t.probe}`, { ...init, signal: AbortSignal.timeout(5000) });
+    const ok = t.ok.includes(r.status);
+    return { product, url: t.url, ok, detail: ok ? `HTTP ${r.status} on ${host}:${t.port}` : `port ${host}:${t.port} open but the service answered HTTP ${r.status} (start the shared stack)` };
+  } catch (e) {
+    return { product, url: t.url, ok: false, detail: `port ${host}:${t.port} open but the call failed (${e.cause?.code || e.message})` };
+  }
 }
 
 export async function probeAll(settings = loadSettings()) {
