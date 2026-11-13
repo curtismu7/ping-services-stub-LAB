@@ -71,6 +71,16 @@ Tokens stay server-side; the page shows decoded claims and rule-by-rule pass/fai
 
 To trace the shared local PF (self-signed cert), run the stub with `NODE_EXTRA_CA_CERTS=deploy/pf-rootCA.pem TRACE_PF_URL=https://127.0.0.1:4732 TRACE_PF_CLIENT_ID=id-jag-kit TRACE_PF_CLIENT_SECRET=...` (the secret lives in `~/.config/demo-kit/provisioning.json` under `pingfederate.idJagKitClientSecret`).
 
+### PF sign-in prerequisites (shared local PingFederate)
+
+The pi.flow sign-in at the shared PF drives client `ai-demo-pf-id-jag` and user `demoUser` (stored in the `aiDemoPfSimplePcv` simple password validator). Three pieces of PF config must match the shared settings file — PF drifts from them over time and the only symptom is `Username or password is incorrect` or `invalid_client`/`invalid_grant` at the token step. Check, in this order:
+
+1. **User password** — `demoUser`'s password in the PCV must equal the demo password (`DEMO_USER_PASSWORD` in the AI-DEMO2 api-server env / vault). Read/patch via admin API: `GET/PUT /pf-admin-api/v1/passwordCredentialValidators/aiDemoPfSimplePcv` (set `Password` + `Confirm Password` values on the `demoUser` row).
+2. **Client secret** — `ai-demo-pf-id-jag`'s secret must equal `PF_EXCHANGE_CLIENT_SECRET` in `~/Development/.env`. Verify with `POST /as/token.oauth2 -u ai-demo-pf-id-jag:<secret> -d grant_type=client_credentials` (401 = mismatch); patch via `PUT /pf-admin-api/v1/oauth/clients/ai-demo-pf-id-jag`, `clientAuth: { type: SECRET, secret: ... }`.
+3. **Stub redirect URI** — the client's `redirectUris` must include `http://localhost:6300/auth/callback` (the stub's callback). Additive; existing URIs are unaffected.
+
+Admin auth is `administrator` + `PF_ADMIN_CONSOLE_PASSWORD` (secrets vault) with header `X-XSRF-Header: PingFederate`. Note: 3 failed passwords lock the account for **1 minute** (`LockoutPeriod` in `AccountLockingService`) — wait it out rather than hammering.
+
 ## Mock / Real (rule 19)
 
 - **Real** (default when `~/Development/.env` has worker creds): probes + exercises hit the real services, one read-only call each.
