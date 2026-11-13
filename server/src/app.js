@@ -264,8 +264,22 @@ td, th { border: 1px solid var(--border); padding: .4rem .6rem; text-align: left
 code { font-family: var(--font-mono); font-size: .85em; }
 pre { background: var(--surface-2); padding: .75rem; border-radius: 6px; overflow-x: auto; }
 .tt-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .5rem 0; }
-#tt-signin-dialog { border: 1px solid var(--border); border-radius: 6px; padding: .75rem; margin: .5rem 0; display: grid; gap: .4rem; max-width: 24rem; }
 #tt-signin-dialog[hidden] { display: none; }
+/* Sign-in card: a draggable floating panel with a pop-out button (the AI-DEMO2 DraggableModal pattern). */
+#tt-signin-card { position: fixed; top: 8rem; left: 50%; transform: translateX(-50%); width: min(24rem, 92vw); background: var(--surface); color: var(--text); border: 1px solid var(--border); border-top: 4px solid var(--accent); border-radius: 10px; box-shadow: 0 20px 48px var(--shadow-ink); z-index: 60; }
+#tt-signin-card[hidden] { display: none; }
+.tt-card-bar { display: flex; align-items: center; justify-content: space-between; padding: .45rem .75rem; background: var(--box-dark); color: var(--on-box); border-radius: 6px 6px 0 0; cursor: move; user-select: none; touch-action: none; }
+.tt-card-title { font-weight: 700; font-size: .875rem; }
+.tt-card-controls { display: inline-flex; gap: .35rem; }
+.tt-card-controls button { min-width: 28px; height: 28px; padding: 0 .4rem; border-radius: 6px; background: transparent; color: var(--on-box); border: 1px solid var(--on-accent-border); cursor: pointer; font: inherit; }
+.tt-card-controls button:hover { border-color: var(--on-box); }
+.tt-card-body { display: grid; gap: .5rem; padding: .9rem; }
+.tt-card-body label { display: grid; gap: .2rem; font-size: .85rem; font-weight: 600; }
+.tt-card-body input { font: inherit; padding: .35rem .5rem; }
+#tt-signin-state { font-size: .85rem; min-height: 1.2em; }
+/* Pop-out window body: the same card, standalone. */
+body.tt-popout { background: var(--bg); display: grid; place-items: center; min-height: 100vh; margin: 0; }
+body.tt-popout #tt-signin-card { position: static; transform: none; }
 @media (max-width: 600px) { .shell-nav { order: 3; flex-basis: 100%; } }
 </style>
 <script>(function(){try{var t=localStorage.getItem('pss.theme');if(t&&t!=='auto')document.documentElement.dataset.theme=t;}catch(e){}})();</script>
@@ -337,11 +351,20 @@ pre { background: var(--surface-2); padding: .75rem; border-radius: 6px; overflo
     <button id="tt-pf-signin" class="primary">Sign in at PingFederate</button>
     <button id="tt-pf-m2m" title="Machine path (password grant at the SE PingFederate); needs TRACE_PF_M2M_* env. Not a user token.">PF M2M (machine)</button>
   </div>
-  <div id="tt-signin-dialog" hidden>
-    <label>Username <input id="tt-user" autocomplete="username"></label>
-    <label>Password <input id="tt-pass" type="password" autocomplete="current-password"></label>
-    <button id="tt-signin-go">Sign in</button>
-    <span id="tt-signin-state" role="status"></span>
+  <div id="tt-signin-card" hidden role="dialog" aria-label="Sign in" data-testid="signin-card">
+    <div class="tt-card-bar" id="tt-card-bar">
+      <span class="tt-card-title">Sign in</span>
+      <span class="tt-card-controls">
+        <button type="button" id="tt-card-popout" title="Pop out to new window" aria-label="Pop out to new window">&#x1FA9F;</button>
+        <button type="button" id="tt-card-close" title="Close" aria-label="Close">&#x2715;</button>
+      </span>
+    </div>
+    <div class="tt-card-body">
+      <label>Username <input id="tt-user" autocomplete="username"></label>
+      <label>Password <input id="tt-pass" type="password" autocomplete="current-password"></label>
+      <button id="tt-signin-go" class="primary">Sign in</button>
+      <span id="tt-signin-state" role="status"></span>
+    </div>
   </div>
   <pre id="tt-result">Get a token or paste one below.</pre>
   <label style="display:block">Or trace a token you already have (it is sent to this server, which decodes and validates it — nothing else):
@@ -451,10 +474,73 @@ for (const provider of ['pingone', 'pingfederate']) {
     const d = await r.json();
     if (!r.ok) { document.getElementById('tt-result').textContent = 'ERROR ' + r.status + ': ' + (d.detail || d.error); return; }
     signinFlow = { provider, flowId: d.flowId };
-    document.getElementById('tt-signin-dialog').hidden = false;
+    document.getElementById('tt-signin-card').hidden = false;
     state.textContent = 'Flow started at ' + providerLabel[provider] + '.';
   };
 }
+// ---- Sign-in card: drag + pop-out (the AI-DEMO2 DraggableModal pattern, vanilla) ----
+(function(){
+  const card = document.getElementById('tt-signin-card');
+  const bar = document.getElementById('tt-card-bar');
+  // drag: pointer events on the title bar move the card
+  let drag = null;
+  bar.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    const rect = card.getBoundingClientRect();
+    card.style.transform = 'none';
+    card.style.left = rect.left + 'px';
+    card.style.top = rect.top + 'px';
+    drag = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    bar.setPointerCapture(e.pointerId);
+  });
+  bar.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    card.style.left = Math.max(0, Math.min(window.innerWidth - 60, e.clientX - drag.dx)) + 'px';
+    card.style.top = Math.max(0, Math.min(window.innerHeight - 40, e.clientY - drag.dy)) + 'px';
+  });
+  bar.addEventListener('pointerup', () => { drag = null; });
+  document.getElementById('tt-card-close').onclick = () => { card.hidden = true; };
+  // pop-out: move the card DOM into a real popup window (styles copied along);
+  // the same nodes keep working there, and "pop back" returns them.
+  let popWin = null;
+  document.getElementById('tt-card-popout').onclick = () => {
+    if (popWin && !popWin.closed) { popWin.focus(); return; }
+    const rect = card.getBoundingClientRect();
+    popWin = window.open('', 'pss_signin', 'width=' + Math.ceil(rect.width + 40) + ',height=' + Math.ceil(rect.height + 120) + ',left=' + Math.ceil(rect.left) + ',top=' + Math.ceil(rect.top) + ',resizable=yes,scrollbars=no');
+    if (!popWin) return;
+    const styleLinks = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map((el) => '<link rel="stylesheet" href="' + el.href + '">').join('');
+    const inlineStyles = Array.from(document.querySelectorAll('style')).map((el) => '<' + 'style>' + el.textContent + '<' + '/style>').join('');
+    const theme = document.documentElement.dataset.theme || '';
+    popWin.document.write('<!DOCTYPE html><html' + (theme ? ' data-theme="' + theme + '"' : '') + '><head><meta charset="utf-8"><title>Sign in — Ping Services Stub</title>' + styleLinks + inlineStyles + '</head><body class="tt-popout"></body></html>');
+    popWin.document.close();
+    // move the card itself; its event listeners travel with the nodes
+    popWin.document.body.appendChild(card);
+    card.hidden = false;
+    // swap the pop-out button into a "pop back" control
+    const popBtn = document.getElementById('tt-card-popout');
+    popBtn.title = 'Pop back into the page'; popBtn.textContent = '\u21B0';
+    popBtn.onclick = () => {
+      document.body.appendChild(card);
+      if (popWin && !popWin.closed) popWin.close();
+      popWin = null;
+      openPopoutRebind();
+    };
+    popWin.addEventListener('beforeunload', () => {
+      // window closed directly: bring the card home
+      if (card.isConnected && card.ownerDocument === document) return;
+      document.body.appendChild(card);
+      popWin = null;
+      openPopoutRebind();
+    });
+  };
+  // keep a named handle so the pop-back button can re-arm the original pop-out
+  window.__pssOpenPopout = document.getElementById('tt-card-popout').onclick;
+  function openPopoutRebind() {
+    const b = document.getElementById('tt-card-popout');
+    b.onclick = window.__pssOpenPopout;
+    b.title = 'Pop out to new window'; b.textContent = '\u{1FA9F}';
+  }
+})();
 document.getElementById('tt-signin-go').onclick = async () => {
   const { provider, flowId } = signinFlow;
   if (!flowId) return;
