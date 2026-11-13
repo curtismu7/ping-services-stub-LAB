@@ -35,7 +35,7 @@ try {
   if (!(await page.locator('#tt-pf-signin').count())) { console.error('FAIL: PF sign-in button missing'); fails++; }
   // In mock mode the PingOne sign-in answers honestly (token trace is real-only).
   await page.locator('#tt-p1-signin').click();
-  await page.waitForFunction(() => /ERROR|mock|not configured/i.test(document.getElementById('tt-result').innerText), null, { timeout: 8000 })
+  await page.waitForFunction(() => /ERROR|mock|not configured/i.test(document.getElementById('tt-result-pretty').innerText), null, { timeout: 8000 })
     .catch(() => { console.error('FAIL: trace did not answer in mock mode'); fails++; });
   console.log(fails ? `e2e: ${fails} failure(s)` : 'e2e: all checks passed');
   await browser.close();

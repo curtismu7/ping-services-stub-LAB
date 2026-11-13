@@ -215,6 +215,37 @@ export function createApp({ health = createHealth(), proxyHosts = labProxyHosts(
     }
   });
 
+  // Start the shared stack through the shelf's own start API: it runs compose start
+  // for the demo AND its declared shared containers (startSharedContainers). The
+  // Origin must be the browser-facing origin, so this is proxied from the UI's fetch
+  // (the browser's own Origin is forwarded) — the server-side relay below only works
+  // when the shelf accepts it; a same-origin fetch from the page is the reliable path.
+  app.post('/api/shared-start', async (req, res) => {
+    if (state.mode === 'mock') return res.status(409).json({ error: 'mock_mode', detail: 'Starting the shared stack is real-only.' });
+    const shelf = shelfInfo().shelfUrl;
+    if (!shelf) return res.status(409).json({ error: 'no_shelf', detail: 'SHELF_URL is not configured; start the shared stack from the demo shelf.' });
+    // SHELF_URL may point at the shelf's host port (127.0.0.1:4400), which this container
+    // cannot reach. The lab-proxy serves the shelf at <shelf>/demo-shelf and IS reachable
+    // from here (extra_hosts maps the name), so try that first, then SHELF_URL itself.
+    const base = shelf.replace(/\/$/, '');
+    const candidates = [];
+    if (/127\.0\.0\.1|localhost/.test(base)) candidates.push(base.replace(/^https?:\/\/[^/]+/, 'https://local.ping-devops.com:8443') + '/demo-shelf');
+    candidates.push(base);
+    let lastErr = '';
+    for (const c of candidates) {
+      try {
+        const r = await fetch(`${c}/api/demos/ping-services-stub/start`, {
+          method: 'POST',
+          headers: { Origin: 'https://local.ping-devops.com:8443' },
+          signal: AbortSignal.timeout(120_000),
+        });
+        const body = await r.json().catch(() => ({}));
+        return res.status(r.status).json(body);
+      } catch (e) { lastErr = e.cause?.code || e.message; }
+    }
+    return res.status(502).json({ ok: false, error: 'shelf_unreachable', detail: lastErr });
+  });
+
   // Reset (rule 3): clears in-memory mode back to the default; no persistent state exists.
   app.post('/api/reset', (req, res) => {
     settings = loadSettings();
@@ -263,6 +294,35 @@ td, th { border: 1px solid var(--border); padding: .4rem .6rem; text-align: left
 .ok { color: var(--status-ok); font-weight: 700; } .fail { color: var(--danger-text); font-weight: 700; }
 code { font-family: var(--font-mono); font-size: .85em; }
 pre { background: var(--surface-2); padding: .75rem; border-radius: 6px; overflow-x: auto; }
+/* Result boxes: pretty view by default, toggleable colored JSON. */
+.resultbox { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: .75rem 1rem; margin: .5rem 0; }
+.resultbox-pretty { font-size: .9rem; line-height: 1.55; overflow-x: auto; }
+.resultbox-actions { margin-top: .5rem; }
+.resultbox-actions button { font: inherit; font-size: .8rem; padding: .2rem .6rem; border-radius: 6px; background: transparent; color: var(--text); border: 1px solid var(--border); cursor: pointer; }
+.resultbox-actions button:hover { border-color: var(--accent); }
+.resultbox-actions button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+/* Colored JSON (shared with the claims block) */
+.json-tok-key { color: var(--status-info); font-weight: 600; }
+.json-tok-str { color: var(--status-ok); }
+.json-tok-num { color: var(--status-warn); }
+.json-tok-bool { color: var(--accent); font-weight: 600; }
+.json-tok-null { color: var(--muted); }
+/* Pretty result rendering */
+.rb-head { font-weight: 700; margin-bottom: .35rem; }
+.rb-verdict { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-size: .78rem; font-weight: 700; letter-spacing: .03em; }
+.rb-verdict--ok { background: var(--status-ok); color: #fff; }
+.rb-verdict--warn { background: var(--status-warn); color: #fff; }
+.rb-verdict--bad { background: var(--danger-text); color: #fff; }
+.rb-granted { color: var(--muted); margin-bottom: .5rem; }
+.rb-checks { margin: 0; padding: 0; list-style: none; }
+.rb-checks li { padding: .18rem 0; border-bottom: 1px solid var(--surface-2); font-size: .85rem; }
+.rb-checks li:last-child { border-bottom: none; }
+.rb-checks .ic { font-weight: 700; margin-right: .35rem; }
+.rb-checks .rule { font-weight: 700; }
+.rb-checks .why { color: var(--muted); }
+.rb-claims { margin-top: .6rem; }
+.rb-claims summary { cursor: pointer; font-weight: 700; font-size: .85rem; }
+.rb-claims pre { margin: .35rem 0 0; font-size: .8rem; }
 .tt-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .5rem 0; }
 #tt-signin-dialog[hidden] { display: none; }
 /* Sign-in card: a draggable floating panel with a pop-out button (the AI-DEMO2 DraggableModal pattern). */
@@ -342,8 +402,12 @@ body.tt-popout #tt-signin-card { position: static; transform: none; }
     <tr data-p="pingone-privilege"><td>PingOne Privilege (SaaS console)</td><td colspan="3">…</td></tr>
     <tr data-p="se-pingfederate"><td>PingFederate (SE K8s, cmuir)</td><td colspan="3">…</td></tr>
   </tbody></table>
-  <h2>Last exercise result</h2>
-  <pre id="result">Press a Test button.</pre>
+  <h2>Last test result</h2>
+  <div class="resultbox" id="result-box">
+    <div class="resultbox-pretty" id="result-pretty">Press a Test button.</div>
+    <pre id="result" class="resultbox-json" hidden>Press a Test button.</pre>
+    <div class="resultbox-actions"><button type="button" id="result-toggle" aria-pressed="false">Show JSON</button></div>
+  </div>
   <h2>Token trace</h2>
   <p>Sign in (authorization code + PKCE via <code>pi.flow</code> — the user path, tokens carry a real <code>sub</code> and scopes), then trace the access token the way a resource server would: decode, verify the signature against the issuer's JWKS, and check the rules (typ, iss, exp, nbf, sub, scope, client_id) one by one. Tokens stay server-side; you see decoded claims only.</p>
   <div class="tt-actions">
@@ -366,7 +430,11 @@ body.tt-popout #tt-signin-card { position: static; transform: none; }
       <span id="tt-signin-state" role="status"></span>
     </div>
   </div>
-  <pre id="tt-result">Get a token or paste one below.</pre>
+  <div class="resultbox" id="tt-result-box">
+    <div class="resultbox-pretty" id="tt-result-pretty">Get a token or paste one below.</div>
+    <pre id="tt-result" class="resultbox-json" hidden>Get a token or paste one below.</pre>
+    <div class="resultbox-actions"><button type="button" id="tt-result-toggle" aria-pressed="false">Show JSON</button></div>
+  </div>
   <label style="display:block">Or trace a token you already have (it is sent to this server, which decodes and validates it — nothing else):
     <textarea id="tt-paste" rows="3" style="width:100%" placeholder="eyJ..."></textarea>
   </label>
@@ -376,6 +444,64 @@ body.tt-popout #tt-signin-card { position: static; transform: none; }
   <h2>Talk track</h2>
   <div id="talktrack-body">Loading…</div>
 </aside>
+<script>
+// ---- shared: colored JSON + pretty/JSON toggle panes ----
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function colorJson(obj) {
+  const json = JSON.stringify(obj, null, 2);
+  // sequential tokenizer over the HTML-escaped JSON: key / string / number / bool / null
+  const s = esc(json);
+  const re = /("(?:[^"\\\\]|\\\\.)*")(\\s*:)?|\\b(true|false)\\b|\\bnull\\b|-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?/g;
+  let out = '';
+  let last = 0;
+  for (let m; (m = re.exec(s));) {
+    out += s.slice(last, m.index);
+    if (m[1] !== undefined) {
+      out += m[2] !== undefined
+        ? '<span class="json-tok-key">' + m[1] + '</span>' + m[2]
+        : '<span class="json-tok-str">' + m[1] + '</span>';
+    } else if (m[3] !== undefined) out += '<span class="json-tok-bool">' + m[3] + '</span>';
+    else if (m[0] === 'null') out += '<span class="json-tok-null">null</span>';
+    else out += '<span class="json-tok-num">' + m[0] + '</span>';
+    last = m.index + m[0].length;
+  }
+  return out + s.slice(last);
+}
+// A pane holds one result in both forms; the toggle swaps the views.
+function makePane(paneId) {
+  const box = document.getElementById(paneId);
+  const pretty = box.querySelector('.resultbox-pretty');
+  const jsonEl = box.querySelector('.resultbox-json');
+  const toggle = box.querySelector('.resultbox-actions button');
+  let data = null;
+  toggle.onclick = () => {
+    const showJson = toggle.getAttribute('aria-pressed') !== 'true';
+    toggle.setAttribute('aria-pressed', String(showJson));
+    toggle.textContent = showJson ? 'Pretty view' : 'Show JSON';
+    pretty.hidden = showJson;
+    jsonEl.hidden = !showJson;
+  };
+  return {
+    // text-only message (no JSON behind it): the toggle hides itself
+    msg(t) { data = null; toggle.hidden = true; pretty.innerHTML = t; jsonEl.hidden = true; pretty.hidden = false; },
+    // object result: pretty by default, JSON one toggle away
+    set(obj, prettyHtml) {
+      data = obj; toggle.hidden = false;
+      jsonEl.innerHTML = colorJson(obj);
+      pretty.innerHTML = prettyHtml;
+    },
+  };
+}
+const resultPane = makePane('result-box');
+const ttPane = makePane('tt-result-box');
+resultPane.msg('Press a Test button.');
+// Pretty rendering for a test result {service, ok, detail}.
+function prettyExercise(d) {
+  const ok = !!d.ok;
+  return '<div class="rb-head"><span class="rb-verdict ' + (ok ? 'rb-verdict--ok' : 'rb-verdict--bad') + '">' + (ok ? 'PASS' : 'FAIL') + '</span> <strong>' + esc(d.service || '') + '</strong></div>'
+    + '<div>' + esc(d.detail || '') + '</div>';
+}
+</script>
 <script>
 async function refresh() {
   const r = await fetch('/api/services'); const d = await r.json();
@@ -395,19 +521,48 @@ async function refresh() {
       btn.setAttribute('aria-busy', 'true');
       const prev = btn.textContent;
       btn.textContent = 'Testing…';
-      document.getElementById('result').textContent = 'Running ' + s.product + '…';
+      resultPane.msg('Testing ' + esc(row.cells[0].textContent) + '…');
       try {
         const res = await fetch('/api/exercise/' + s.product, { method: 'POST', signal: AbortSignal.timeout(30000) });
         const d = await res.json();
-        document.getElementById('result').textContent = JSON.stringify(d, null, 2);
+        resultPane.set(d, prettyExercise(d));
       } catch (e) {
-        document.getElementById('result').textContent = 'ERROR: ' + (e.name === 'TimeoutError' ? 'no answer in 30s' : e.message);
+        resultPane.msg('<span class="fail">ERROR: ' + esc(e.name === 'TimeoutError' ? 'no answer in 30s' : e.message) + '</span>');
       } finally {
         btn.disabled = false;
         btn.removeAttribute('aria-busy');
         btn.textContent = prev;
       }
     };
+    // DOWN rows for the shared Docker products get a "Start shared stack" button:
+    // it calls the shelf's start API, which runs compose start for the shared
+    // containers this lab declares (startSharedContainers).
+    const SHARED_STARTABLE = ['pingfederate', 'pinggateway', 'privilege-gateway'];
+    if (!s.ok && SHARED_STARTABLE.includes(s.product)) {
+      const startBtn = document.createElement('button');
+      startBtn.textContent = 'Start shared stack';
+      startBtn.title = 'Ask the demo shelf to start the shared containers (compose start). Takes a minute or two.';
+      startBtn.onclick = async () => {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Starting…';
+        document.getElementById('result').textContent = 'Asking the shelf to start the shared stack…';
+        try {
+          const res = await fetch('/api/shared-start', { method: 'POST', signal: AbortSignal.timeout(150000) });
+          const d = await res.json();
+          document.getElementById('result').textContent = 'Shelf start: ' + JSON.stringify(d, null, 2);
+        } catch (e) {
+          document.getElementById('result').textContent = 'ERROR: ' + (e.name === 'TimeoutError' ? 'shelf start timed out after 150s' : e.message);
+        }
+        startBtn.disabled = false;
+        startBtn.textContent = 'Start shared stack';
+        refresh();
+      };
+      const cell = document.createElement('td');
+      cell.style.whiteSpace = 'nowrap';
+      cell.append(btn, ' ', startBtn);
+      row.querySelector('td.x').replaceChildren(cell);
+      return;
+    }
     row.querySelector('td.x').replaceChildren(btn);
   }
 }
@@ -442,19 +597,20 @@ refresh();
 
 // ---- token trace ----
 function showTrace(d) {
-  const NL = String.fromCharCode(10);
-  const el = document.getElementById('tt-result');
-  if (d.checks) {
-    const rows = d.checks.map(c => (c.ok ? '\u2705' : '\u274c') + ' ' + c.rule + ': ' + c.detail).join(NL);
-    const head = (d.grantedBy ? 'Granted by ' + d.grantedBy + ' (issuer ' + d.issuer + ')' + NL + NL : '');
-    const claims = d.claims ? NL + NL + 'Claims:' + NL + JSON.stringify(d.claims, null, 2) : '';
-    el.textContent = head + 'VERDICT: ' + d.verdict + ' (' + d.passed + '/' + d.total + ' checks pass)' + NL + NL + rows + claims;
-  } else el.textContent = JSON.stringify(d, null, 2);
+  if (!d || !d.checks) { ttPane.set(d, '<pre style="margin:0">' + esc(JSON.stringify(d, null, 2)) + '</pre>'); return; }
+  const verdictClass = d.verdict === 'ACCEPTED' ? 'rb-verdict--ok'
+    : /ACCEPTED/.test(d.verdict) ? 'rb-verdict--warn' : 'rb-verdict--bad';
+  let html = '<div class="rb-head"><span class="rb-verdict ' + verdictClass + '">' + esc(d.verdict) + '</span> <strong>' + d.passed + '/' + d.total + ' checks pass</strong></div>';
+  if (d.grantedBy) html += '<div class="rb-granted">Granted by ' + esc(d.grantedBy) + (d.issuer ? ' — issuer ' + esc(d.issuer) : '') + '</div>';
+  html += '<ul class="rb-checks">' + d.checks.map(c =>
+    '<li><span class="ic">' + (c.ok ? '\u2705' : '\u274c') + '</span><span class="rule">' + esc(c.rule) + '</span> <span class="why">' + esc(c.detail) + '</span></li>').join('') + '</ul>';
+  if (d.claims) html += '<details class="rb-claims"><summary>Claims</summary><pre>' + colorJson(d.claims) + '</pre></details>';
+  ttPane.set(d, html);
 }
 async function post(url, body) {
   const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
   const d = await r.json();
-  if (!r.ok) { document.getElementById('tt-result').textContent = 'ERROR ' + r.status + ': ' + (d.detail || d.error); return null; }
+  if (!r.ok) { ttPane.msg('<span class="fail">ERROR ' + r.status + ': ' + esc(d.detail || d.error) + '</span>'); return null; }
   return d;
 }
 document.getElementById('tt-pf-m2m').onclick = async () => { const d = await post('/api/token/pf-m2m'); if (d) showTrace(d); };
@@ -474,7 +630,7 @@ for (const provider of ['pingone', 'pingfederate']) {
     const state = document.getElementById('tt-signin-state');
     const r = await fetch(provider === 'pingone' ? '/auth/p1/start' : '/auth/pf/start');
     const d = await r.json();
-    if (!r.ok) { document.getElementById('tt-result').textContent = 'ERROR ' + r.status + ': ' + (d.detail || d.error); return; }
+    if (!r.ok) { ttPane.msg('<span class="fail">ERROR ' + r.status + ': ' + esc(d.detail || d.error) + '</span>'); return; }
     signinFlow = { provider, flowId: d.flowId };
     document.getElementById('tt-signin-card').hidden = false;
     state.textContent = 'Flow started at ' + providerLabel[provider] + '.';
