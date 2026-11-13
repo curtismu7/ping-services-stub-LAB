@@ -9,7 +9,7 @@ import {
 } from './exercises.js';
 import { getPingOneToken, getPfM2mToken, traceToken } from './tokenTrace.js';
 import { pfSigninStart, pfSigninCredentials } from './pfSignin.js';
-import { p1SigninStart, p1SigninCredentials } from './p1Signin.js';
+import { p1SigninStart, p1SigninCredentials, p1SigninDevice, p1SigninOtp, p1SigninComplete } from './p1Signin.js';
 import { shelfInfo } from './shelfLink.js';
 
 // SERVICE_MODE: 'real' (default when settings exist) or 'mock' (no outbound calls;
@@ -183,7 +183,47 @@ export function createApp({ health = createHealth(), proxyHosts = labProxyHosts(
       return res.status(400).json({ error: 'invalid_request' });
     }
     try {
-      const got = await p1SigninCredentials({ flowId, username, password });
+      const step = await p1SigninCredentials({ flowId, username, password });
+      if (step.status === 'COMPLETED') {
+        const got = await p1SigninComplete({ flowId });
+        const trace = await traceToken(got.accessToken);
+        const idTrace = got.idToken ? await traceToken(got.idToken) : null;
+        return res.json({ grantedBy: got.grantedBy, issuer: got.issuer, accessToken: { ...trace }, idToken: idTrace });
+      }
+      // MFA in progress: the browser drives the next step (device / otp).
+      res.json({ mfa: true, status: step.status, next: step.next, devices: step.devices });
+    } catch (e) {
+      res.status(e.status || 502).json({ error: e.code || 'p1_error', detail: e.message });
+    }
+  });
+
+  app.post('/auth/p1/device', async (req, res) => {
+    const { flowId, deviceId } = req.body || {};
+    if (typeof flowId !== 'string' || typeof deviceId !== 'string' || !flowId || !deviceId) {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    try {
+      const step = await p1SigninDevice({ flowId, deviceId });
+      if (step.status === 'COMPLETED') {
+        const got = await p1SigninComplete({ flowId });
+        const trace = await traceToken(got.accessToken);
+        const idTrace = got.idToken ? await traceToken(got.idToken) : null;
+        return res.json({ grantedBy: got.grantedBy, issuer: got.issuer, accessToken: { ...trace }, idToken: idTrace });
+      }
+      res.json({ mfa: true, status: step.status, next: step.next, devices: step.devices });
+    } catch (e) {
+      res.status(e.status || 502).json({ error: e.code || 'p1_error', detail: e.message });
+    }
+  });
+
+  app.post('/auth/p1/otp', async (req, res) => {
+    const { flowId, otp, fido2 } = req.body || {};
+    if (typeof flowId !== 'string' || !flowId || (typeof otp !== 'string' && !fido2)) {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    try {
+      const got = await p1SigninOtp({ flowId, otp, fido2 });
+      if (got.mfa) return res.json(got);
       const trace = await traceToken(got.accessToken);
       const idTrace = got.idToken ? await traceToken(got.idToken) : null;
       res.json({ grantedBy: got.grantedBy, issuer: got.issuer, accessToken: { ...trace }, idToken: idTrace });
@@ -266,6 +306,10 @@ function page(mode, realAvailable, settingsPath) {
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ping Services Stub</title><link rel="stylesheet" href="/standalone-ui.css"><link rel="stylesheet" href="/top-menu.css"><style>
 html { font-size: var(--fs, 16px); }
+/* Present mode: projector-friendly type sizes; the talk-track panel opens with it. */
+body.present main { font-size: 1.15rem; }
+body.present table { font-size: 1.05rem; }
+body.present .banner { font-size: 1.05rem; }
 /* Talk track: a fixed side panel (family presenter-script pattern). */
 #talktrack-panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(26rem, 90vw); overflow-y: auto; background: var(--surface); color: var(--text); border-left: 2px solid var(--accent); box-shadow: -4px 0 16px var(--shadow-ink); padding: 1rem; z-index: 50; white-space: pre-wrap; font-size: .875rem; line-height: 1.5; }
 #talktrack-panel h2 { margin-top: 0; }
@@ -361,6 +405,7 @@ body.tt-popout #tt-signin-card { position: static; transform: none; }
         </select>
       </label>
       <button type="button" id="talktrack-btn" aria-pressed="false" data-testid="talk-track-toggle" title="Show the presenter script alongside the page">Talk track</button>
+      <button type="button" id="present-btn" aria-pressed="false" data-testid="presenter" title="Bigger text for a projector; Esc exits">Present (P)</button>
       <a class="top-menu__shelf top-menu__shelf--accent" id="shelf-link" hidden href="#" target="_blank" rel="noreferrer" title="Open the demo shelf (launcher)" data-testid="shelf-link">Shelf</a>
       <a class="top-menu__shelf" href="https://github.com/curtismu7/ping-services-stub-LAB#readme" target="_blank" rel="noreferrer" title="Open this lab's documentation" data-testid="help-link">Help</a>
       <button type="button" data-testid="version" title="About this lab">v0.1.0</button>
@@ -424,8 +469,17 @@ body.tt-popout #tt-signin-card { position: static; transform: none; }
       </span>
     </div>
     <div class="tt-card-body">
-      <label>Username <input id="tt-user" autocomplete="username"></label>
-      <label>Password <input id="tt-pass" type="password" autocomplete="current-password"></label>
+      <div id="tt-step-user">
+        <label>Username <input id="tt-user" autocomplete="username"></label>
+        <label>Password <input id="tt-pass" type="password" autocomplete="current-password"></label>
+      </div>
+      <div id="tt-step-device" hidden>
+        <div style="font-size:.85rem;font-weight:600">Verify your identity — pick a device</div>
+        <div id="tt-devices" role="radiogroup" aria-label="MFA device" style="display:grid;gap:.3rem"></div>
+      </div>
+      <div id="tt-step-otp" hidden>
+        <label id="tt-otp-label">One-time code <input id="tt-otp" inputmode="numeric" autocomplete="one-time-code"></label>
+      </div>
       <button id="tt-signin-go" class="primary">Sign in</button>
       <span id="tt-signin-state" role="status"></span>
     </div>
@@ -579,6 +633,23 @@ async function setMode(m) {
 }
 document.getElementById('mode-select').onchange = (e) => setMode(e.target.value);
 document.getElementById('reset-btn').onclick = async () => { await fetch('/api/reset', { method: 'POST' }); location.reload(); };
+// Present mode: bigger type + the talk track opens alongside (they pair); Esc exits.
+(function(){
+  const btn = document.getElementById('present-btn'), ttBtn = document.getElementById('talktrack-btn');
+  function setPresent(on) {
+    document.body.classList.toggle('present', on);
+    btn.setAttribute('aria-pressed', String(on));
+    btn.textContent = on ? 'Exit present (Esc)' : 'Present (P)';
+    // Present pairs with the talk track: entering present opens the script.
+    if (on && ttBtn.getAttribute('aria-pressed') !== 'true') ttBtn.click();
+  }
+  btn.onclick = () => setPresent(!document.body.classList.contains('present'));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.body.classList.contains('present')) setPresent(false);
+    if ((e.key === 'p' || e.key === 'P') && !e.metaKey && !e.ctrlKey && !e.altKey
+      && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) setPresent(!document.body.classList.contains('present'));
+  });
+})();
 // Talk track: toggle the side panel; content loads once from /api/talk-track.
 (function(){
   const btn = document.getElementById('talktrack-btn'), panel = document.getElementById('talktrack-panel');
@@ -631,7 +702,7 @@ for (const provider of ['pingone', 'pingfederate']) {
     const r = await fetch(provider === 'pingone' ? '/auth/p1/start' : '/auth/pf/start');
     const d = await r.json();
     if (!r.ok) { ttPane.msg('<span class="fail">ERROR ' + r.status + ': ' + esc(d.detail || d.error) + '</span>'); return; }
-    signinFlow = { provider, flowId: d.flowId };
+    signinFlow = { provider, flowId: d.flowId, step: 'user' };
     document.getElementById('tt-signin-card').hidden = false;
     state.textContent = 'Flow started at ' + providerLabel[provider] + '.';
   };
@@ -699,30 +770,91 @@ for (const provider of ['pingone', 'pingfederate']) {
     b.title = 'Pop out to new window'; b.textContent = '\u{1FA9F}';
   }
 })();
-document.getElementById('tt-signin-go').onclick = async () => {
-  const { provider, flowId } = signinFlow;
-  if (!flowId) return;
-  const state = document.getElementById('tt-signin-state');
-  const r = await fetch(provider === 'pingone' ? '/auth/p1/credentials' : '/auth/pf/credentials', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flowId, username: document.getElementById('tt-user').value, password: document.getElementById('tt-pass').value }) });
-  const d = await r.json();
-  if (!r.ok) { state.textContent = (d.detail || d.error); return; }
-  state.textContent = 'Signed in at ' + providerLabel[provider] + '.';
+// The sign-in is multi-step for PingOne MFA: username/password → (device picker) →
+// (OTP) → done. signinFlow.step tracks where the card is; tt-signin-go acts per step.
+function cardStep(step) {
+  document.getElementById('tt-step-user').hidden = step !== 'user';
+  document.getElementById('tt-step-device').hidden = step !== 'device';
+  document.getElementById('tt-step-otp').hidden = step !== 'otp';
+  document.getElementById('tt-signin-go').textContent = step === 'otp' ? 'Verify code' : step === 'device' ? 'Next' : 'Sign in';
+  if (step === 'otp') setTimeout(() => document.getElementById('tt-otp').focus(), 50);
+}
+function cardReset() {
+  cardStep('user');
   document.getElementById('tt-pass').value = '';
-  // Success closes the card (and its pop-out window, if any) after a short beat
-  // so the user sees the confirmation; the trace lands in #tt-result on the page.
+  document.getElementById('tt-otp').value = '';
+}
+function traceResult(d) {
+  const at = d.accessToken || {};
+  if (at.verdict === 'not a JWT' && d.idToken && d.idToken.checks) {
+    showTrace({ ...d.idToken, grantedBy: d.grantedBy + ' — access token is opaque (not a JWT); showing the ID token instead', issuer: d.issuer });
+  } else showTrace(d.accessToken);
+}
+function closeCardAfterSuccess() {
   setTimeout(() => {
     const card = document.getElementById('tt-signin-card');
     if (card && card.ownerDocument === document) card.hidden = true;
     else if (window.opener && !window.opener.closed) window.close();
   }, 700);
   signinFlow = { provider: null, flowId: null };
-  // PF mints opaque access tokens; trace the ID token instead and say so,
-  // rather than showing a dead end.
-  const at = d.accessToken || {};
-  if (at.verdict === 'not a JWT' && d.idToken && d.idToken.checks) {
-    showTrace({ ...d.idToken, grantedBy: d.grantedBy + ' — access token is opaque (not a JWT); showing the ID token instead', issuer: d.issuer });
-  } else showTrace(d.accessToken);
+}
+document.getElementById('tt-signin-go').onclick = async () => {
+  const flow = signinFlow;
+  if (!flow.flowId) return;
+  const state = document.getElementById('tt-signin-state');
+  let r; let d;
+  if (flow.provider === 'pingfederate') {
+    r = await fetch('/auth/pf/credentials', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flowId: flow.flowId, username: document.getElementById('tt-user').value, password: document.getElementById('tt-pass').value }) });
+    d = await r.json();
+    if (!r.ok) { state.textContent = (d.detail || d.error); return; }
+    state.textContent = 'Signed in at PingFederate.';
+    cardReset(); closeCardAfterSuccess(); traceResult(d); return;
+  }
+  // PingOne, per step
+  if (flow.step === 'device') {
+    const pick = document.querySelector('input[name="tt-device"]:checked');
+    if (!pick) { state.textContent = 'Pick a device first.'; return; }
+    r = await fetch('/auth/p1/device', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flowId: flow.flowId, deviceId: pick.value }) });
+    d = await r.json();
+    if (!r.ok) { state.textContent = (d.detail || d.error); return; }
+    if (d.mfa) { mfaStep(d); return; }
+    state.textContent = 'Signed in at PingOne.'; cardReset(); closeCardAfterSuccess(); traceResult(d); return;
+  }
+  if (flow.step === 'otp') {
+    r = await fetch('/auth/p1/otp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flowId: flow.flowId, otp: document.getElementById('tt-otp').value }) });
+    d = await r.json();
+    if (!r.ok) { state.textContent = (d.detail || d.error); return; }
+    if (d.mfa) { mfaStep(d); return; }
+    state.textContent = 'Signed in at PingOne (MFA verified).';
+    cardReset(); closeCardAfterSuccess(); traceResult(d); return;
+  }
+  r = await fetch('/auth/p1/credentials', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flowId: flow.flowId, username: document.getElementById('tt-user').value, password: document.getElementById('tt-pass').value }) });
+  d = await r.json();
+  if (!r.ok) { state.textContent = (d.detail || d.error); return; }
+  if (d.mfa) { state.textContent = 'Password verified — one more step.'; mfaStep(d); return; }
+  state.textContent = 'Signed in at PingOne.';
+  cardReset(); closeCardAfterSuccess(); traceResult(d);
 };
+// Render whatever the MFA state asks for next: a device radio list or an OTP box.
+function mfaStep(d) {
+  const flow = signinFlow;
+  flow.step = d.next;
+  if (d.next === 'device') {
+    const wrap = document.getElementById('tt-devices');
+    wrap.innerHTML = (d.devices || []).map((dev) =>
+      '<label style="display:inline-flex;gap:.4rem;align-items:center;font-weight:400">'
+      + '<input type="radio" name="tt-device" value="' + esc(dev.id) + '"' + (dev.fido2 ? ' data-fido2="1"' : '') + '> ' + esc(dev.label) + '</label>').join('');
+    cardStep('device');
+    document.getElementById('tt-signin-state').textContent = 'Pick how to verify.';
+    return;
+  }
+  if (d.next === 'otp') {
+    cardStep('otp');
+    document.getElementById('tt-signin-state').textContent = 'Code sent — check your email/messages.';
+    return;
+  }
+  document.getElementById('tt-signin-state').textContent = 'Unexpected flow state: ' + (d.status || '?');
+}
 </script>
 <script>(function(){var sel=document.getElementById('theme-select');try{sel.value=localStorage.getItem('pss.theme')||'auto';}catch(e){sel.value='auto';}sel.addEventListener('change',function(){var v=sel.value;if(v==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=v;try{localStorage.setItem('pss.theme',v);}catch(e){}});})();</script>
 <script>
