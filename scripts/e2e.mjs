@@ -17,7 +17,7 @@ try {
   await page.waitForTimeout(300);
   const rows = await page.locator('table#services tbody tr').count();
   if (rows !== 6) { console.error(`FAIL: expected 6 service rows, got ${rows}`); fails++; }
-  await page.locator('tr[data-p="pingfederate"] button', { hasText: 'Exercise' }).click();
+  await page.locator('tr[data-p="pingfederate"] button', { hasText: 'Test' }).click();
   await page.waitForFunction(() => document.getElementById('result').innerText.includes('pingfederate'), null, { timeout: 10000 });
   const result = await page.locator('#result').innerText();
   if (!/pingfederate/.test(result)) { console.error('FAIL: exercise result not rendered'); fails++; }

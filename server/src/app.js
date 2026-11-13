@@ -330,11 +330,11 @@ body.tt-popout #tt-signin-card { position: static; transform: none; }
   <p>Every lab in this family reuses shared Ping infrastructure: one local PingFederate, one PingGateway, one Privilege Agent Gateway (all Docker), plus the PingOne SaaS environment from the shared settings file and the SE-K8s PingFederate. When one of them is down, half the family's demos fail with the same confusing error. This stub is the family's circuit tester: <strong>one page, six services, one read-only call each</strong> — the minimum that proves the wiring is live, so you know in ten seconds whether the shared stack is up before a demo.</p>
   <h2>What the sections do</h2>
   <ul>
-    <li><strong>Services table</strong> — each row probes one shared service (a TCP connect, or discovery/console reachability) and shows UP/DOWN with where it probed. Press <em>Exercise</em> for the real, read-only call that proves the service answers (PF discovery + JWKS, PingGateway 401 enforcement point, Privilege REST API, PingOne populations, console reachability, SE-PF heartbeat).</li>
+    <li><strong>Services table</strong> — each row probes one shared service (a TCP connect, or discovery/console reachability) and shows UP/DOWN with where it probed. Press <em>Test</em> for the real, read-only call that proves the service answers (PF discovery + JWKS, PingGateway 401 enforcement point, Privilege REST API, PingOne populations, console reachability, SE-PF heartbeat).</li>
     <li><strong>Token trace</strong> — sign in at PingOne or PingFederate (authorization code + PKCE via <code>pi.flow</code>, the user path), then the stub traces the resulting access token the way a resource server would: decode, verify the RS256 signature against the issuer's JWKS, and check typ / iss / exp / nbf / sub / scope / client_id rule by rule, with an honest verdict. Tokens never leave the server — you see decoded claims only. You can also paste any token you already have and trace it.</li>
     <li><strong>Mock / Real</strong> (header) — Real makes the actual calls; Mock answers canned results with zero network, so the demo works offline or on a plane.</li>
   </ul>
-  <table id="services"><thead><tr><th>Service</th><th>Probed at</th><th>Status</th><th>Exercise (real call)</th></tr></thead><tbody>
+  <table id="services"><thead><tr><th>Service</th><th>Probed at</th><th>Status</th><th>Test (real call)</th></tr></thead><tbody>
     <tr data-p="pingfederate"><td>PingFederate (shared, local)</td><td colspan="3">…</td></tr>
     <tr data-p="pinggateway"><td>PingGateway (shared, local)</td><td colspan="3">…</td></tr>
     <tr data-p="privilege-gateway"><td>Privilege Agent Gateway (shared, local)</td><td colspan="3">…</td></tr>
@@ -343,7 +343,7 @@ body.tt-popout #tt-signin-card { position: static; transform: none; }
     <tr data-p="se-pingfederate"><td>PingFederate (SE K8s, cmuir)</td><td colspan="3">…</td></tr>
   </tbody></table>
   <h2>Last exercise result</h2>
-  <pre id="result">Press an Exercise button.</pre>
+  <pre id="result">Press a Test button.</pre>
   <h2>Token trace</h2>
   <p>Sign in (authorization code + PKCE via <code>pi.flow</code> — the user path, tokens carry a real <code>sub</code> and scopes), then trace the access token the way a resource server would: decode, verify the signature against the issuer's JWKS, and check the rules (typ, iss, exp, nbf, sub, scope, client_id) one by one. Tokens stay server-side; you see decoded claims only.</p>
   <div class="tt-actions">
@@ -387,12 +387,14 @@ async function refresh() {
       + '<td><span class="' + (s.ok ? 'ok' : 'fail') + '">' + (s.ok ? 'UP' : 'DOWN') + '</span>' + (s.detail ? ' <code>' + String(s.detail).replace(/</g, '&lt;') + '</code>' : '') + '</td>'
       + '<td class="x"></td>';
     const btn = document.createElement('button');
-    btn.textContent = 'Exercise';
+    btn.className = 'primary';
+    btn.textContent = 'Test';
+    btn.setAttribute('aria-label', 'Test ' + row.cells[0].textContent);
     btn.onclick = async () => {
       btn.disabled = true;
       btn.setAttribute('aria-busy', 'true');
       const prev = btn.textContent;
-      btn.textContent = 'Running…';
+      btn.textContent = 'Testing…';
       document.getElementById('result').textContent = 'Running ' + s.product + '…';
       try {
         const res = await fetch('/api/exercise/' + s.product, { method: 'POST', signal: AbortSignal.timeout(30000) });
@@ -550,6 +552,14 @@ document.getElementById('tt-signin-go').onclick = async () => {
   if (!r.ok) { state.textContent = (d.detail || d.error); return; }
   state.textContent = 'Signed in at ' + providerLabel[provider] + '.';
   document.getElementById('tt-pass').value = '';
+  // Success closes the card (and its pop-out window, if any) after a short beat
+  // so the user sees the confirmation; the trace lands in #tt-result on the page.
+  setTimeout(() => {
+    const card = document.getElementById('tt-signin-card');
+    if (card && card.ownerDocument === document) card.hidden = true;
+    else if (window.opener && !window.opener.closed) window.close();
+  }, 700);
+  signinFlow = { provider: null, flowId: null };
   // PF mints opaque access tokens; trace the ID token instead and say so,
   // rather than showing a dead end.
   const at = d.accessToken || {};
