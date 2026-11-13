@@ -312,7 +312,14 @@ pre { background: var(--surface-2); padding: .75rem; border-radius: 6px; overflo
 </header>
 <main>
   <div class="banner" role="note">SIMULATION: this stub makes one read-only call per service. It provisions nothing.</div>
-  <p>One stub, six shared services. Each row runs one real, read-only call — the minimum that proves the wiring.</p>
+  <h1>What this lab is</h1>
+  <p>Every lab in this family reuses shared Ping infrastructure: one local PingFederate, one PingGateway, one Privilege Agent Gateway (all Docker), plus the PingOne SaaS environment from the shared settings file and the SE-K8s PingFederate. When one of them is down, half the family's demos fail with the same confusing error. This stub is the family's circuit tester: <strong>one page, six services, one read-only call each</strong> — the minimum that proves the wiring is live, so you know in ten seconds whether the shared stack is up before a demo.</p>
+  <h2>What the sections do</h2>
+  <ul>
+    <li><strong>Services table</strong> — each row probes one shared service (a TCP connect, or discovery/console reachability) and shows UP/DOWN with where it probed. Press <em>Exercise</em> for the real, read-only call that proves the service answers (PF discovery + JWKS, PingGateway 401 enforcement point, Privilege REST API, PingOne populations, console reachability, SE-PF heartbeat).</li>
+    <li><strong>Token trace</strong> — sign in at PingOne or PingFederate (authorization code + PKCE via <code>pi.flow</code>, the user path), then the stub traces the resulting access token the way a resource server would: decode, verify the RS256 signature against the issuer's JWKS, and check typ / iss / exp / nbf / sub / scope / client_id rule by rule, with an honest verdict. Tokens never leave the server — you see decoded claims only. You can also paste any token you already have and trace it.</li>
+    <li><strong>Mock / Real</strong> (header) — Real makes the actual calls; Mock answers canned results with zero network, so the demo works offline or on a plane.</li>
+  </ul>
   <table id="services"><thead><tr><th>Service</th><th>Probed at</th><th>Status</th><th>Exercise (real call)</th></tr></thead><tbody>
     <tr data-p="pingfederate"><td>PingFederate (shared, local)</td><td colspan="3">…</td></tr>
     <tr data-p="pinggateway"><td>PingGateway (shared, local)</td><td colspan="3">…</td></tr>
