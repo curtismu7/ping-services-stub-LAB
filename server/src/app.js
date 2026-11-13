@@ -4,7 +4,7 @@ import express from 'express';
 import { createHealth, servicesSnapshot } from './health.js';
 import { loadSettings } from './settings.js';
 import {
-  exercisePingOne, exercisePingFederate, exercisePingGateway,
+  exercisePingOne, exercisePingOneUser, exercisePingFederate, exercisePingGateway,
   exercisePrivilegeGateway, exercisePrivilegeConsole, exerciseSePf,
 } from './exercises.js';
 import { getPingOneToken, getPfM2mToken, traceToken } from './tokenTrace.js';
@@ -36,6 +36,7 @@ const PRIV_BASE = process.env.EXERCISE_PRIV_BASE || 'http://host.docker.internal
 
 const EXERCISERS = {
   pingone: () => exercisePingOne(settings),
+  'pingone-user': () => exercisePingOneUser(settings),
   pingfederate: () => exercisePingFederate(PF_BASE),
   pinggateway: () => exercisePingGateway(PG_BASE),
   'privilege-gateway': () => exercisePrivilegeGateway(PRIV_BASE),
@@ -488,6 +489,7 @@ body.tt-popout #tt-signin-card { position: static; transform: none; }
     <tr data-p="pinggateway"><td>PingGateway (shared, local)</td><td colspan="3" class="loading-row"><span class="mini-spinner" aria-hidden="true"></span> Probing…</td></tr>
     <tr data-p="privilege-gateway"><td>Privilege Agent Gateway (shared, local)</td><td colspan="3" class="loading-row"><span class="mini-spinner" aria-hidden="true"></span> Probing…</td></tr>
     <tr data-p="pingone"><td>PingOne (SaaS)</td><td colspan="3" class="loading-row"><span class="mini-spinner" aria-hidden="true"></span> Probing…</td></tr>
+    <tr data-p="pingone-user"><td>PingOne user app (pi.flow sign-in path)</td><td colspan="3" class="loading-row"><span class="mini-spinner" aria-hidden="true"></span> Probing…</td></tr>
     <tr data-p="pingone-privilege"><td>PingOne Privilege (SaaS console)</td><td colspan="3" class="loading-row"><span class="mini-spinner" aria-hidden="true"></span> Probing…</td></tr>
     <tr data-p="se-pingfederate"><td>PingFederate (SE K8s, cmuir)</td><td colspan="3" class="loading-row"><span class="mini-spinner" aria-hidden="true"></span> Probing…</td></tr>
   </tbody></table>

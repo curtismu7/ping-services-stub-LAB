@@ -29,6 +29,48 @@ export async function exercisePingOne(settings = loadSettings()) {
   return { service: 'pingone', ok: pop.status === 200, detail: `populations HTTP ${pop.status} (worker token OK)` };
 }
 
+// PingOne user path: the user app (PINGONE_USER_*) is what pi.flow sign-in uses.
+// Read-only: worker token → read the app record → check its registered grant
+// types and redirect include what the sign-in card depends on (authorization
+// code + PKCE, response_mode pi.flow, client_secret_post token auth).
+export async function exercisePingOneUser(settings = loadSettings()) {
+  if (!settings.PINGONE_USER_CLIENT_ID || !settings.PINGONE_USER_CLIENT_SECRET) {
+    return { service: 'pingone', ok: false, detail: 'user app not configured (need PINGONE_USER_CLIENT_ID / PINGONE_USER_CLIENT_SECRET)' };
+  }
+  if (!settings.PINGONE_CLIENT_ID || !settings.PINGONE_CLIENT_SECRET) {
+    return { service: 'pingone', ok: false, detail: 'worker app not configured (need PINGONE_CLIENT_ID / PINGONE_CLIENT_SECRET to read the user-app record)' };
+  }
+  const region = REGION_ALIAS[String(settings.PINGONE_REGION || 'com').toLowerCase()] || 'com';
+  const env = settings.PINGONE_ENVIRONMENT_ID;
+  const tok = await j(`https://auth.pingone.${region}/${env}/as/token`, {
+    method: 'POST',
+    headers: {
+      authorization: `Basic ${Buffer.from(`${settings.PINGONE_CLIENT_ID}:${settings.PINGONE_CLIENT_SECRET}`).toString('base64')}`,
+      'content-type': 'application/x-www-form-urlencoded',
+    },
+    body: 'grant_type=client_credentials',
+  });
+  if (tok.status !== 200) return { service: 'pingone', ok: false, detail: `worker token HTTP ${tok.status}` };
+  const app = await j(`https://api.pingone.${region}/v1/environments/${env}/applications/${settings.PINGONE_USER_CLIENT_ID}`, {
+    headers: { authorization: `Bearer ${tok.body.access_token}` },
+  });
+  if (app.status !== 200) return { service: 'pingone', ok: false, detail: `user-app record HTTP ${app.status}` };
+  const grants = (app.body.grantTypes || []).join(', ') || '(none)';
+  const redirect = (app.body.redirectUris || [])[0] || '(none)';
+  const method = (app.body.tokenEndpointAuthMethod || 'client_secret_basic').toLowerCase();
+  const configured = (process.env.PINGONE_USER_REDIRECT_URI || '').replace(/\/$/, '');
+  const okRedirect = configured
+    ? (app.body.redirectUris || []).some((u) => u.replace(/\/$/, '') === configured)
+    : (app.body.redirectUris || []).some((u) => /local\.ping-devops\.com:4000/.test(u));
+  const wants = ['AUTHORIZATION_CODE', 'REFRESH_TOKEN'].every((g) => (app.body.grantTypes || []).includes(g));
+  const ok = wants && okRedirect && method === 'client_secret_post';
+  return {
+    service: 'pingone',
+    ok,
+    detail: `user app: grants ${grants}; token auth ${method}; redirect ${redirect}${ok ? '' : ' — expected AUTHORIZATION_CODE+REFRESH_TOKEN, client_secret_post, and the configured PINGONE_USER_REDIRECT_URI registered (run scripts/pingone-setup.sh)'}`,
+  };
+}
+
 // PingFederate: OIDC discovery + JWKS fetch (read-only, no credentials).
 export async function exercisePingFederate(base) {
   const disc = await j(`${base}/.well-known/openid-configuration`);
