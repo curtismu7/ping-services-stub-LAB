@@ -349,6 +349,9 @@ button[aria-busy="true"] { position: relative; color: transparent !important; }
 button[aria-busy="true"]::after { content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 td.x button { min-width: 5.5rem; }
+/* Startup probing: small spinner in each service row until its probe returns. */
+.loading-row { color: var(--muted); }
+.mini-spinner { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin .8s linear infinite; vertical-align: -2px; margin-right: .4rem; }
 .shell-bar :focus-visible { outline: 3px solid var(--on-box); outline-offset: 2px; }
 @media (max-width: 600px) { .shell-bar { gap: .75rem; padding: .6rem 1rem; } .shell-nav { order: 3; flex-basis: 100%; } }
 main { padding: 1rem; max-width: 60rem; margin: 0 auto; }
@@ -461,12 +464,12 @@ body.tt-popout #tt-signin-card { position: static; transform: none; }
     <li><strong>Mock / Real</strong> (header) — Real makes the actual calls; Mock answers canned results with zero network, so the demo works offline or on a plane.</li>
   </ul>
   <table id="services"><thead><tr><th>Service</th><th>Probed at</th><th>Status</th><th>Test (real call)</th></tr></thead><tbody>
-    <tr data-p="pingfederate"><td>PingFederate (shared, local)</td><td colspan="3">…</td></tr>
-    <tr data-p="pinggateway"><td>PingGateway (shared, local)</td><td colspan="3">…</td></tr>
-    <tr data-p="privilege-gateway"><td>Privilege Agent Gateway (shared, local)</td><td colspan="3">…</td></tr>
-    <tr data-p="pingone"><td>PingOne (SaaS)</td><td colspan="3">…</td></tr>
-    <tr data-p="pingone-privilege"><td>PingOne Privilege (SaaS console)</td><td colspan="3">…</td></tr>
-    <tr data-p="se-pingfederate"><td>PingFederate (SE K8s, cmuir)</td><td colspan="3">…</td></tr>
+    <tr data-p="pingfederate"><td>PingFederate (shared, local)</td><td colspan="3" class="loading-row"><span class="mini-spinner" aria-hidden="true"></span> Probing…</td></tr>
+    <tr data-p="pinggateway"><td>PingGateway (shared, local)</td><td colspan="3" class="loading-row"><span class="mini-spinner" aria-hidden="true"></span> Probing…</td></tr>
+    <tr data-p="privilege-gateway"><td>Privilege Agent Gateway (shared, local)</td><td colspan="3" class="loading-row"><span class="mini-spinner" aria-hidden="true"></span> Probing…</td></tr>
+    <tr data-p="pingone"><td>PingOne (SaaS)</td><td colspan="3" class="loading-row"><span class="mini-spinner" aria-hidden="true"></span> Probing…</td></tr>
+    <tr data-p="pingone-privilege"><td>PingOne Privilege (SaaS console)</td><td colspan="3" class="loading-row"><span class="mini-spinner" aria-hidden="true"></span> Probing…</td></tr>
+    <tr data-p="se-pingfederate"><td>PingFederate (SE K8s, cmuir)</td><td colspan="3" class="loading-row"><span class="mini-spinner" aria-hidden="true"></span> Probing…</td></tr>
   </tbody></table>
   <h2>Last test result</h2>
   <div class="resultbox" id="result-box">
