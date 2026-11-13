@@ -92,7 +92,16 @@ export async function traceToken(token, { now = Date.now() } = {}) {
     ({ header, claims } = decodeJwt(token));
     checks.push({ rule: 'three parts', ok: true, detail: 'header.claims.signature with base64url segments' });
   } catch (e) {
-    return { checks: [{ rule: 'three parts', ok: false, detail: e.message }], verdict: 'not a JWT' };
+    // Opaque (reference) access tokens — PF issues these by default — are not
+    // decodable; a resource server would validate them via token introspection.
+    const opaque = !/\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/.test(String(token || ''));
+    return {
+      checks: [{ rule: 'three parts', ok: false, detail: opaque
+        ? 'not a three-part JWT — this is an opaque (reference) token; a resource server validates it via token introspection (RFC 7662), not local JWKS verification'
+        : e.message }],
+      verdict: 'NOT A JWT (opaque token)',
+      passed: 0, total: 1,
+    };
   }
   const add = (rule, ok, detail) => checks.push({ rule, ok, detail });
 

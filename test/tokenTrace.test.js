@@ -78,8 +78,11 @@ test('trace: wrong typ is flagged', async () => {
 
 test('trace: not a JWT at all → honest verdict', async () => {
   const d = await traceToken('hello world');
-  assert.equal(d.verdict, 'not a JWT');
+  assert.equal(d.verdict, 'NOT A JWT (opaque token)');
   assert.equal(d.checks[0].ok, false);
+  assert.match(d.checks[0].detail, /introspection/);
+  assert.equal(d.passed, 0);
+  assert.equal(d.total, 1);
 });
 
 after(() => new Promise((r) => server?.close(r)));
