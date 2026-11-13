@@ -9,7 +9,7 @@ import {
 } from './exercises.js';
 import { getPingOneToken, getPfM2mToken, traceToken } from './tokenTrace.js';
 import { pfSigninStart, pfSigninCredentials } from './pfSignin.js';
-import { p1SigninStart, p1SigninCredentials, p1SigninDevice, p1SigninOtp, p1SigninComplete } from './p1Signin.js';
+import { p1SigninStart, p1SigninCredentials, p1SigninDevice, p1SigninOtp, p1SigninAssertion, p1SigninComplete } from './p1Signin.js';
 import { shelfInfo } from './shelfLink.js';
 
 // SERVICE_MODE: 'real' (default when settings exist) or 'mock' (no outbound calls;
@@ -210,19 +210,40 @@ export function createApp({ health = createHealth(), proxyHosts = labProxyHosts(
         const idTrace = got.idToken ? await traceToken(got.idToken) : null;
         return res.json({ grantedBy: got.grantedBy, issuer: got.issuer, accessToken: { ...trace }, idToken: idTrace });
       }
-      res.json({ mfa: true, status: step.status, next: step.next, devices: step.devices });
+      res.json({ mfa: true, status: step.status, next: step.next, devices: step.devices, publicKeyCredentialRequestOptions: step.publicKeyCredentialRequestOptions });
     } catch (e) {
       res.status(e.status || 502).json({ error: e.code || 'p1_error', detail: e.message });
     }
   });
 
   app.post('/auth/p1/otp', async (req, res) => {
-    const { flowId, otp, fido2 } = req.body || {};
-    if (typeof flowId !== 'string' || !flowId || (typeof otp !== 'string' && !fido2)) {
+    const { flowId, otp } = req.body || {};
+    if (typeof flowId !== 'string' || !flowId || typeof otp !== 'string') {
       return res.status(400).json({ error: 'invalid_request' });
     }
     try {
-      const got = await p1SigninOtp({ flowId, otp, fido2 });
+      const got = await p1SigninOtp({ flowId, otp });
+      if (got.mfa) return res.json(got);
+      const trace = await traceToken(got.accessToken);
+      const idTrace = got.idToken ? await traceToken(got.idToken) : null;
+      res.json({ grantedBy: got.grantedBy, issuer: got.issuer, accessToken: { ...trace }, idToken: idTrace });
+    } catch (e) {
+      res.status(e.status || 502).json({ error: e.code || 'p1_error', detail: e.message });
+    }
+  });
+
+  // FIDO2 passkey: the browser runs navigator.credentials.get() with the options
+  // the device-select step returned, then posts the signed assertion here. PingOne
+  // validates the origin inside clientDataJSON, so the ceremony must run on the
+  // page the user is on (same-origin write rules already apply).
+  app.post('/auth/p1/assertion', async (req, res) => {
+    const { flowId, assertion } = req.body || {};
+    const origin = String(req.headers.origin || '');
+    if (typeof flowId !== 'string' || !flowId || !assertion || typeof assertion !== 'object') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    try {
+      const got = await p1SigninAssertion({ flowId, assertion, origin });
       if (got.mfa) return res.json(got);
       const trace = await traceToken(got.accessToken);
       const idTrace = got.idToken ? await traceToken(got.idToken) : null;
@@ -783,6 +804,7 @@ function cardReset() {
   cardStep('user');
   document.getElementById('tt-pass').value = '';
   document.getElementById('tt-otp').value = '';
+  document.getElementById('tt-otp').parentElement.hidden = false;
 }
 function traceResult(d) {
   const at = d.accessToken || {};
@@ -853,7 +875,71 @@ function mfaStep(d) {
     document.getElementById('tt-signin-state').textContent = 'Code sent — check your email/messages.';
     return;
   }
+  if (d.next === 'passkey' && d.publicKeyCredentialRequestOptions) {
+    runPasskey(d.publicKeyCredentialRequestOptions);
+    return;
+  }
   document.getElementById('tt-signin-state').textContent = 'Unexpected flow state: ' + (d.status || '?');
+}
+// ---- WebAuthn passkey ceremony (browser side) ----
+// b64url / signed-byte-array → Uint8Array (PingOne's shape; mirrors the BFF's passkeyCeremony).
+function b64ToBytes(val) {
+  if (val instanceof Uint8Array) return val;
+  if (Array.isArray(val)) return new Uint8Array(val.map((b) => b & 0xff));
+  const stripped = String(val).replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/').replace(/=+$/, '');
+  const padded = stripped + '='.repeat((4 - (stripped.length % 4)) % 4);
+  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+}
+function bytesToB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+async function runPasskey(rawOptions) {
+  const state = document.getElementById('tt-signin-state');
+  try {
+    const opts = typeof rawOptions === 'string' ? JSON.parse(rawOptions) : rawOptions;
+    const publicKey = { challenge: b64ToBytes(opts.challenge) };
+    if ('rpId' in opts) publicKey.rpId = opts.rpId;
+    if ('timeout' in opts) publicKey.timeout = opts.timeout;
+    if ('userVerification' in opts) publicKey.userVerification = opts.userVerification;
+    if (Array.isArray(opts.allowCredentials)) {
+      publicKey.allowCredentials = opts.allowCredentials.map((c) => {
+        const cred = { type: c.type || 'public-key', id: b64ToBytes(c.id) };
+        if (c.transports) cred.transports = c.transports;
+        return cred;
+      });
+    }
+    cardStep('otp'); // reuse the OTP pane: hide inputs, show "touch your passkey"
+    document.getElementById('tt-otp').parentElement.hidden = true;
+    state.textContent = 'Use your passkey (Touch ID / security key)…';
+    const credential = await navigator.credentials.get({ publicKey });
+    if (!credential) throw new Error('No passkey credential was returned');
+    const assertion = {
+      id: credential.id,
+      rawId: bytesToB64(credential.rawId),
+      type: credential.type,
+      response: {
+        clientDataJSON: bytesToB64(credential.response.clientDataJSON),
+        authenticatorData: bytesToB64(credential.response.authenticatorData),
+        signature: bytesToB64(credential.response.signature),
+        userHandle: credential.response.userHandle ? bytesToB64(credential.response.userHandle) : null,
+      },
+    };
+    state.textContent = 'Verifying passkey…';
+    const r = await fetch('/auth/p1/assertion', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flowId: signinFlow.flowId, assertion }) });
+    const d = await r.json();
+    if (!r.ok) { state.textContent = (d.detail || d.error); document.getElementById('tt-otp').parentElement.hidden = false; return; }
+    if (d.mfa) { mfaStep(d); return; }
+    state.textContent = 'Signed in at PingOne (passkey).';
+    cardReset(); closeCardAfterSuccess(); traceResult(d);
+  } catch (e) {
+    state.textContent = 'Passkey failed: ' + (e.message || e.name);
+    document.getElementById('tt-otp').parentElement.hidden = false;
+    cardStep('device'); // back to the picker so another device can be chosen
+    state.textContent = 'Passkey failed — pick another device.';
+  }
 }
 </script>
 <script>(function(){var sel=document.getElementById('theme-select');try{sel.value=localStorage.getItem('pss.theme')||'auto';}catch(e){sel.value='auto';}sel.addEventListener('change',function(){var v=sel.value;if(v==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=v;try{localStorage.setItem('pss.theme',v);}catch(e){}});})();</script>

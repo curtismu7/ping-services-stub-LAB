@@ -188,20 +188,25 @@ export async function p1SigninDevice({ flowId, deviceId }) {
     throw Object.assign(new Error(`device selection failed (HTTP ${http}, ${data.code || '?'})`), { status: 502, code: 'p1_error' });
   }
   flow.status = data.status;
+  // FIDO2: a passkey device lands at ASSERTION_REQUIRED with the WebAuthn options
+  // (string, object, or signed-byte-array — the browser ceremony normalizes all three).
+  if (data.status === 'ASSERTION_REQUIRED') {
+    const opts = data.publicKeyCredentialRequestOptions
+      ?? data.publicKeyCredentialRequestOptionsBase64?.publicKeyCredentialRequestOptions
+      ?? null;
+    return { status: data.status, next: 'passkey', publicKeyCredentialRequestOptions: opts };
+  }
   return { status: data.status, next: nextStep(data), devices: devicesOf(data) };
 }
 
-// Step 2b: submit the OTP (OTP_REQUIRED), or start/pass on a FIDO2 device.
-export async function p1SigninOtp({ flowId, otp, fido2 }) {
+// Step 2b: submit the OTP (OTP_REQUIRED).
+export async function p1SigninOtp({ flowId, otp }) {
   const flow = flows.get(flowId);
   if (!flow || Date.now() - flow.startedAt > FLOW_TTL_MS) {
     flows.delete(flowId);
     throw Object.assign(new Error('no active flow — start one first'), { status: 409, code: 'flow_not_started' });
   }
   const c = p1Client(flow.settings);
-  if (fido2) {
-    throw Object.assign(new Error('Passkey (FIDO2) verification needs the WebAuthn browser ceremony, which this stub does not run. Pick an Email or SMS device instead.'), { status: 400, code: 'fido2_unsupported' });
-  }
   const step = await flowStep(flow, flowId, 'application/vnd.pingidentity.otp.check+json', { otp: String(otp || '').trim() }, c.base);
   const { status: http, data } = step;
   if (http === 400 && (data.details || []).some((d) => d?.code === 'INVALID_OTP')) {
@@ -209,6 +214,49 @@ export async function p1SigninOtp({ flowId, otp, fido2 }) {
   }
   if (http !== 200 && http !== 201) {
     throw Object.assign(new Error(`OTP check failed (HTTP ${http}, ${data.code || '?'})`), { status: 502, code: 'p1_error' });
+  }
+  flow.status = data.status;
+  // FIDO2: selecting a passkey device lands at ASSERTION_REQUIRED with the WebAuthn
+  // options (PingOne may stringify publicKeyCredentialRequestOptions). The browser
+  // runs navigator.credentials.get() against them; the signed assertion comes back
+  // to p1SigninAssertion. OTP devices return OTP_REQUIRED.
+  if (data.status === 'ASSERTION_REQUIRED') {
+    // PingOne hands over the WebAuthn options as a JSON string, an object, or a
+    // signed-byte-array (Jackson) — pass whichever shape through; the browser
+    // ceremony normalizes it (b64ToBytes handles all three).
+    const opts = data.publicKeyCredentialRequestOptions
+      ?? data.publicKeyCredentialRequestOptionsBase64?.publicKeyCredentialRequestOptions
+      ?? null;
+    return {
+      status: data.status, next: 'passkey',
+      publicKeyCredentialRequestOptions: opts,
+    };
+  }
+  return { status: data.status, next: nextStep(data), devices: devicesOf(data) };
+}
+
+// Step 2c: verify the WebAuthn assertion the browser produced for a FIDO2 device.
+// PingOne validates the signature AND the origin inside clientDataJSON — the
+// ceremony must have run on an origin whose domain matches the RP ID.
+export async function p1SigninAssertion({ flowId, assertion, origin }) {
+  const flow = flows.get(flowId);
+  if (!flow || Date.now() - flow.startedAt > FLOW_TTL_MS) {
+    flows.delete(flowId);
+    throw Object.assign(new Error('no active flow — start one first'), { status: 409, code: 'flow_not_started' });
+  }
+  if (!assertion || typeof assertion !== 'object') {
+    throw Object.assign(new Error('body must be { assertion, origin }'), { status: 400, code: 'invalid_request' });
+  }
+  const c = p1Client(flow.settings);
+  // `assertion` goes as a JSON string, not an object; compatibility FULL matches the BFF.
+  const step = await flowStep(flow, flowId, 'application/vnd.pingidentity.assertion.check+json',
+    { origin, assertion: JSON.stringify(assertion), compatibility: 'FULL' }, c.base);
+  const { status: http, data } = step;
+  if (http === 400) {
+    throw Object.assign(new Error('The passkey could not be verified (origin/RP mismatch or bad signature).'), { status: 401, code: 'assertion_failed' });
+  }
+  if (http !== 200 && http !== 201) {
+    throw Object.assign(new Error(`assertion check failed (HTTP ${http}, ${data.code || '?'})`), { status: 502, code: 'p1_error' });
   }
   flow.status = data.status;
   if (data.status !== 'COMPLETED') return { status: data.status, next: nextStep(data), devices: devicesOf(data) };
@@ -232,6 +280,7 @@ function nextStep(data) {
     case 'DEVICE_SELECTION_REQUIRED': return 'device';
     case 'OTP_REQUIRED': return 'otp';
     case 'PASSWORD_REQUIRED': return 'password';
+    case 'ASSERTION_REQUIRED': return 'passkey';
     default: return `unexpected:${data.status}`;
   }
 }
