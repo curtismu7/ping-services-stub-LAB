@@ -143,10 +143,21 @@ export async function traceToken(token, { now = Date.now() } = {}) {
   else add('exp', exp > nowSec, `exp ${new Date(exp * 1000).toISOString()} ${exp > nowSec ? 'is in the future' : 'has PASSED'} (lifetime ${typeof nbf === 'number' ? `${exp - nbf}s` : 'unknown'})`);
   if (typeof nbf === 'number') add('nbf', nbf <= nowSec, `nbf ${new Date(nbf * 1000).toISOString()} ${nbf <= nowSec ? 'has passed' : 'is in the FUTURE'}`);
 
-  // sub / scope / client_id
-  add('sub', typeof claims.sub === 'string' && claims.sub.length > 0, claims.sub ? `sub "${claims.sub.slice(0, 40)}"` : 'no sub claim');
+  // sub / scope / client_id. sub and scope are conditional expectations, not hard
+  // requirements of a JWT access token: an M2M token has no user subject (the caller
+  // is client_id), and PingOne worker tokens carry no scope by design (authority
+  // comes from the app's role assignments). Report them as notes (ok: true with the
+  // caveat in the detail) so the verdict math reflects the token's own rules.
+  const isMachinePath = !claims.sub && claims.client_id; // client_credentials shape
+  const hasSub = typeof claims.sub === 'string' && claims.sub.length > 0;
+  add('sub', hasSub || isMachinePath, hasSub
+    ? `sub "${claims.sub.slice(0, 40)}"`
+    : isMachinePath
+      ? 'no sub — expected for an M2M token: there is no user subject, the caller is client_id'
+      : 'no sub claim');
   const scope = typeof claims.scope === 'string' ? claims.scope : Array.isArray(claims.scope) ? claims.scope.join(' ') : '';
-  add('scope', scope.length > 0, scope ? `scope "${scope}"` : 'no scope claim (may be scope-less by design for some M2M tokens)');
+  const hasScope = scope.length > 0;
+  add('scope', hasScope || isMachinePath, hasScope ? `scope "${scope}"` : 'no scope claim — expected for a PingOne worker/M2M token: authority comes from the app\'s role assignments, not scopes');
   add('client_id', typeof claims.client_id === 'string' && claims.client_id.length > 0, claims.client_id ? `client_id "${claims.client_id}"` : 'no client_id claim');
 
   // jti (single-use is a resource-AS choice, presence is good hygiene)

@@ -84,6 +84,14 @@ export function createApp({ health = createHealth(), proxyHosts = labProxyHosts(
 
   app.get('/standalone-ui.css', (_req, res) => { res.type('css').send(fs.readFileSync(new URL('../../standalone-ui.css', import.meta.url))); });
   app.get('/top-menu.css', (_req, res) => { res.type('css').send(fs.readFileSync(new URL('../../top-menu.css', import.meta.url))); });
+  // The presenter script (docs/talk-track.md), served as plain text for the Talk-track panel.
+  app.get('/api/talk-track', (_req, res) => {
+    try {
+      res.type('text/plain; charset=utf-8').set('Cache-Control', 'no-store').send(fs.readFileSync(new URL('../../docs/talk-track.md', import.meta.url), 'utf8'));
+    } catch {
+      res.status(404).json({ error: 'no_talk_track' });
+    }
+  });
   app.get('/api/health', (req, res) => res.json(health.snapshot()));
 
   app.get('/api/info', (req, res) => {
@@ -227,6 +235,10 @@ function page(mode, realAvailable, settingsPath) {
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ping Services Stub</title><link rel="stylesheet" href="/standalone-ui.css"><link rel="stylesheet" href="/top-menu.css"><style>
 html { font-size: var(--fs, 16px); }
+/* Talk track: a fixed side panel (family presenter-script pattern). */
+#talktrack-panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(26rem, 90vw); overflow-y: auto; background: var(--surface); color: var(--text); border-left: 2px solid var(--accent); box-shadow: -4px 0 16px var(--shadow-ink); padding: 1rem; z-index: 50; white-space: pre-wrap; font-size: .875rem; line-height: 1.5; }
+#talktrack-panel h2 { margin-top: 0; }
+#talktrack-panel[hidden] { display: none; }
 /* shell-bar layout (app-owned per the family standard; tokens come from standalone-ui.css) */
 .shell-bar { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; padding: .65rem 1.25rem; background: var(--box-dark); color: var(--on-box); border-bottom: 3px solid transparent; border-image: var(--accent-gradient) 1; position: relative; }
 .shell-brand { display: inline-flex; align-items: center; gap: .6rem; font-weight: 700; letter-spacing: .02em; }
@@ -274,6 +286,7 @@ pre { background: var(--surface-2); padding: .75rem; border-radius: 6px; overflo
           <option value="real" data-testid="mode-real" ${realAvailable ? '' : 'disabled'} title="${realAvailable ? '' : 'Real is not configured. Mock keeps working.'}">Real</option>
         </select>
       </label>
+      <button type="button" id="talktrack-btn" aria-pressed="false" data-testid="talk-track-toggle" title="Show the presenter script alongside the page">Talk track</button>
       <a class="top-menu__shelf top-menu__shelf--accent" id="shelf-link" hidden href="#" target="_blank" rel="noreferrer" title="Open the demo shelf (launcher)" data-testid="shelf-link">Shelf</a>
       <a class="top-menu__shelf" href="https://github.com/curtismu7/ping-services-stub-LAB#readme" target="_blank" rel="noreferrer" title="Open this lab's documentation" data-testid="help-link">Help</a>
       <button type="button" data-testid="version" title="About this lab">v0.1.0</button>
@@ -329,6 +342,10 @@ pre { background: var(--surface-2); padding: .75rem; border-radius: 6px; overflo
   </label>
   <button id="tt-trace">Trace pasted token</button>
 </main>
+<aside id="talktrack-panel" hidden aria-label="Talk track">
+  <h2>Talk track</h2>
+  <div id="talktrack-body">Loading…</div>
+</aside>
 <script>
 async function refresh() {
   const r = await fetch('/api/services'); const d = await r.json();
@@ -375,6 +392,20 @@ async function setMode(m) {
 }
 document.getElementById('mode-select').onchange = (e) => setMode(e.target.value);
 document.getElementById('reset-btn').onclick = async () => { await fetch('/api/reset', { method: 'POST' }); location.reload(); };
+// Talk track: toggle the side panel; content loads once from /api/talk-track.
+(function(){
+  const btn = document.getElementById('talktrack-btn'), panel = document.getElementById('talktrack-panel');
+  btn.onclick = () => {
+    const show = panel.hidden;
+    panel.hidden = !show;
+    btn.setAttribute('aria-pressed', String(show));
+    if (show && document.getElementById('talktrack-body').textContent === 'Loading…') {
+      fetch('/api/talk-track').then((r) => (r.ok ? r.text() : 'No talk track.'))
+        .then((t) => { document.getElementById('talktrack-body').textContent = t; })
+        .catch(() => { document.getElementById('talktrack-body').textContent = 'No talk track.'; });
+    }
+  };
+})();
 refresh();
 
 // ---- token trace ----
