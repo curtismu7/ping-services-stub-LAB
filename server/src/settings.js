@@ -11,6 +11,14 @@ const KEYS = [
   'PRIVILEGE_SSO_CLIENT_ID', 'PRIVILEGE_SSO_CLIENT_SECRET', 'PRIVILEGE_SSO_ENV_ID',
   // SE K8s PingFederate (cmuir) — this lab's extra
   'SE_PF_URL',
+  // The shared PF id-jag-kit client (pi.flow sign-in trace). The secret is the same
+  // credential the id-jag kit uses; the shared settings file carries it as
+  // PF_EXCHANGE_CLIENT_ID / PF_EXCHANGE_CLIENT_SECRET.
+  'TRACE_PF_URL', 'TRACE_PF_CLIENT_ID', 'TRACE_PF_CLIENT_SECRET',
+  'PF_EXCHANGE_CLIENT_ID', 'PF_EXCHANGE_CLIENT_SECRET',
+  // The PingOne user app (authorization code + PKCE via pi.flow) — the token source
+  // for the PingOne trace: a USER token, not the scope-less worker client_credentials.
+  'PINGONE_USER_CLIENT_ID', 'PINGONE_USER_CLIENT_SECRET', 'PINGONE_USER_REDIRECT_URI',
 ];
 
 export function loadSettings(envPath) {

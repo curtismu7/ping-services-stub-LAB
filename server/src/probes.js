@@ -49,10 +49,13 @@ async function probePrivilegeConsole(settings) {
 
 // The three Docker products are probed directly (in-process, works inside Docker):
 // a TCP connect to the published loopback port, exactly what the shared probe checks.
+// privilege-gateway: since the 2026-11-12 v1.261112-NYL binary swap the mcpgw :8623
+// listener is GONE (the binary derives :443 from SERVER_URL); its published REST API
+// on 8620 is the port that still answers on the host.
 const SHARED_PORTS = {
   pingfederate: { port: 9031, url: '127.0.0.1:9031/pf/heartbeat.ping (host)' },
   pinggateway: { port: 3036, url: '127.0.0.1:3036/mcp (host)' },
-  'privilege-gateway': { port: 8623, url: '127.0.0.1:8623/ (host)' },
+  'privilege-gateway': { port: 8620, url: '127.0.0.1:8620/ (host; mcpgw REST API, post-261112)' },
 };
 
 async function probeShared(product) {

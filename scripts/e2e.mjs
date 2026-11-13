@@ -21,17 +21,21 @@ try {
   await page.waitForFunction(() => document.getElementById('result').innerText.includes('pingfederate'), null, { timeout: 10000 });
   const result = await page.locator('#result').innerText();
   if (!/pingfederate/.test(result)) { console.error('FAIL: exercise result not rendered'); fails++; }
-  // real-btn is disabled (no settings) — assert it, don't click
-  if (!(await page.locator('#real-btn').isDisabled())) { console.error('FAIL: real-btn should be disabled without settings'); fails++; }
+  // mode-select shows Real disabled (no settings) — assert, don't switch
+  if (!(await page.locator('#mode-select option[value="real"]').evaluate((el) => el.disabled))) { console.error('FAIL: Real option should be disabled without settings'); fails++; }
+  if (!(await page.locator('[data-testid="top-menu"]').isVisible())) { console.error('FAIL: standard top-menu missing'); fails++; }
+  if (!(await page.locator('.shell-bar .shell-logo').isVisible())) { console.error('FAIL: shell-bar brand missing'); fails++; }
   await page.locator('#reset-btn').click();
   await page.waitForTimeout(1500);
   const afterReset = await page.locator('table#services tbody tr td:nth-child(3)').first().innerText();
   if (!/UP/.test(afterReset)) { console.error('FAIL: services not refreshed after Reset'); fails++; }
-  // Token trace section exists; in mock mode the buttons answer honestly
-  const tt = await page.locator('#tt-p1').count();
+  // Token trace section exists: both pi.flow sign-in buttons (PingOne primary, PF) render.
+  const tt = await page.locator('#tt-p1-signin').count();
   if (tt < 1) { console.error('FAIL: token trace section missing'); fails++; }
-  await page.locator('#tt-p1').click();
-  await page.waitForFunction(() => /ERROR|mock/i.test(document.getElementById('tt-result').innerText), null, { timeout: 8000 })
+  if (!(await page.locator('#tt-pf-signin').count())) { console.error('FAIL: PF sign-in button missing'); fails++; }
+  // In mock mode the PingOne sign-in answers honestly (token trace is real-only).
+  await page.locator('#tt-p1-signin').click();
+  await page.waitForFunction(() => /ERROR|mock|not configured/i.test(document.getElementById('tt-result').innerText), null, { timeout: 8000 })
     .catch(() => { console.error('FAIL: trace did not answer in mock mode'); fails++; });
   console.log(fails ? `e2e: ${fails} failure(s)` : 'e2e: all checks passed');
   await browser.close();

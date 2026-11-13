@@ -9,7 +9,7 @@ One stub that exercises **every shared Ping service the family deploys** (rule 2
 |---|---|---|
 | PingFederate (shared, local) | `127.0.0.1:9031` via ping-shared | OIDC discovery + JWKS fetch |
 | PingGateway (shared, local) | `127.0.0.1:3036` | `POST /mcp` unauthenticated → 401/405 proves the enforcement point |
-| Privilege Agent Gateway (shared, local) | `127.0.0.1:8623` | root listener probe |
+| Privilege Agent Gateway (shared, local) | `127.0.0.1:8620` | root listener probe (mcpgw REST API; the old `:8623` listener is gone since the v1.261112-NYL binary swap) |
 | PingOne (SaaS) | `auth.pingone.<region>` | worker `client_credentials` + populations read |
 | PingOne Privilege (SaaS console) | `console.privilege.pingone.com` | reachability probe (registration stays console-manual) |
 | PingFederate (SE K8s, owner namespace) | host recorded in the owner notes | discovery + heartbeat |

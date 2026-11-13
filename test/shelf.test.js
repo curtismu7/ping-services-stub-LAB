@@ -20,7 +20,7 @@ test('GET /api/shelf returns SHELF_URL (trailing slash trimmed) before any other
     assert.notEqual(p.status, 200);
     const html = await (await fetch(`${base}/`)).text();
     assert.match(html, /fetch\('\/api\/shelf'/);
-    assert.match(html, /a\.className = 'shelf-link'/);
+    assert.match(html, /getElementById\('shelf-link'\)/);
   } finally {
     if (prev === undefined) delete process.env.SHELF_URL; else process.env.SHELF_URL = prev;
     await new Promise((r) => { server.closeAllConnections?.(); server.close(r); });

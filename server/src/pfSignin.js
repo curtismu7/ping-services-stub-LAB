@@ -5,8 +5,16 @@ import crypto from 'node:crypto';
 import { loadSettings } from './settings.js';
 
 const PF_URL = () => process.env.TRACE_PF_URL || 'https://local.ping-devops.com:9031';
-const CLIENT = () => process.env.TRACE_PF_CLIENT_ID || 'id-jag-kit';
+// The shared PF client for the pi.flow sign-in: TRACE_PF_* (env) wins, then the
+// shared settings file's PF_EXCHANGE_* keys (the credential the id-jag kit uses).
+const CLIENT = () => process.env.TRACE_PF_CLIENT_ID || '';
 const SECRET = () => process.env.TRACE_PF_CLIENT_SECRET || process.env.PF_EXCHANGE_CLIENT_SECRET || '';
+// Resolve client id + secret from the shared settings file when env does not set them.
+function pfClient(settings) {
+  const id = CLIENT() || settings.PF_EXCHANGE_CLIENT_ID || 'id-jag-kit';
+  const secret = SECRET() || settings.PF_EXCHANGE_CLIENT_SECRET || '';
+  return { id, secret };
+}
 
 const FLOW_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
@@ -26,12 +34,13 @@ function mergeCookies(jar, res) {
 
 export async function pfSigninStart() {
   const settings = loadSettings();
-  if (!SECRET()) throw Object.assign(new Error('TRACE_PF_CLIENT_SECRET is not set (the shared PF id-jag-kit client secret)'), { status: 409, code: 'not_configured' });
+  const { id, secret } = pfClient(settings);
+  if (!secret) throw Object.assign(new Error('The shared PF client secret is not configured (need TRACE_PF_CLIENT_SECRET or PF_EXCHANGE_CLIENT_SECRET in the shared settings file)'), { status: 409, code: 'not_configured' });
   const verifier = b64url(crypto.randomBytes(32));
   const state = b64url(crypto.randomBytes(16));
   const url = new URL(`${PF_URL()}/as/authorization.oauth2`);
   url.searchParams.set('response_type', 'code');
-  url.searchParams.set('client_id', CLIENT());
+  url.searchParams.set('client_id', id);
   const appOrigin = `http://localhost:${process.env.PORT || 6300}`;
   url.searchParams.set('redirect_uri', `${appOrigin}/auth/callback`);
   url.searchParams.set('scope', 'openid profile email offline_access');
@@ -51,6 +60,8 @@ export async function pfSigninStart() {
 }
 
 export async function pfSigninCredentials({ flowId, username, password }) {
+  const settings = loadSettings();
+  const { id, secret } = pfClient(settings);
   const flow = flows.get(flowId);
   if (!flow || Date.now() - flow.startedAt > FLOW_TTL_MS) {
     flows.delete(flowId);
@@ -86,7 +97,7 @@ export async function pfSigninCredentials({ flowId, username, password }) {
   const token = await fetch(`${PF_URL()}/as/token.oauth2`, {
     method: 'POST',
     headers: {
-      authorization: `Basic ${Buffer.from(`${CLIENT()}:${SECRET()}`).toString('base64')}`,
+      authorization: `Basic ${Buffer.from(`${id}:${secret}`).toString('base64')}`,
       'content-type': 'application/x-www-form-urlencoded',
     },
     body: new URLSearchParams({
@@ -98,5 +109,5 @@ export async function pfSigninCredentials({ flowId, username, password }) {
   });
   const tb = await token.json().catch(() => ({}));
   if (token.status !== 200) throw Object.assign(new Error(`token endpoint answered HTTP ${token.status} (${tb.error || '?'})`), { status: 502, code: 'pf_error' });
-  return { accessToken: tb.access_token, idToken: tb.id_token, refreshToken: tb.refresh_token ? '[refresh token held server-side, not shown]' : null, issuer: PF_URL(), grantedBy: `authorization code + PKCE (${CLIENT()} as ${username})` };
+  return { accessToken: tb.access_token, idToken: tb.id_token, refreshToken: tb.refresh_token ? '[refresh token held server-side, not shown]' : null, issuer: PF_URL(), grantedBy: `authorization code + PKCE (${id} as ${username})` };
 }

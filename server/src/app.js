@@ -9,6 +9,7 @@ import {
 } from './exercises.js';
 import { getPingOneToken, getPfM2mToken, traceToken } from './tokenTrace.js';
 import { pfSigninStart, pfSigninCredentials } from './pfSignin.js';
+import { p1SigninStart, p1SigninCredentials } from './p1Signin.js';
 import { shelfInfo } from './shelfLink.js';
 
 // SERVICE_MODE: 'real' (default when settings exist) or 'mock' (no outbound calls;
@@ -26,11 +27,17 @@ const MOCK_SERVICES = [
   { product: 'se-pingfederate', url: 'mock://se-pingfederate', ok: true, detail: 'MOCK: canned probe' },
 ];
 
+// Exercise base URLs: the shared PF cert's SAN covers local.ping-devops.com, not loopback
+// (and the container reaches the host via PROBE_HOST), so the host name comes from env.
+const PF_BASE = process.env.EXERCISE_PF_BASE || 'https://local.ping-devops.com:9031';
+const PG_BASE = process.env.EXERCISE_PG_BASE || 'https://local.ping-devops.com:3036';
+const PRIV_BASE = process.env.EXERCISE_PRIV_BASE || 'http://host.docker.internal:8620/';
+
 const EXERCISERS = {
   pingone: () => exercisePingOne(settings),
-  pingfederate: () => exercisePingFederate('https://local.ping-devops.com:9031'),
-  pinggateway: () => exercisePingGateway(),
-  'privilege-gateway': () => exercisePrivilegeGateway('http://127.0.0.1:8623/'),
+  pingfederate: () => exercisePingFederate(PF_BASE),
+  pinggateway: () => exercisePingGateway(PG_BASE),
+  'privilege-gateway': () => exercisePrivilegeGateway(PRIV_BASE),
   'pingone-privilege': () => exercisePrivilegeConsole(settings),
   'se-pingfederate': () => exerciseSePf(settings),
 };
@@ -76,6 +83,7 @@ export function createApp({ health = createHealth(), proxyHosts = labProxyHosts(
   });
 
   app.get('/standalone-ui.css', (_req, res) => { res.type('css').send(fs.readFileSync(new URL('../../standalone-ui.css', import.meta.url))); });
+  app.get('/top-menu.css', (_req, res) => { res.type('css').send(fs.readFileSync(new URL('../../top-menu.css', import.meta.url))); });
   app.get('/api/health', (req, res) => res.json(health.snapshot()));
 
   app.get('/api/info', (req, res) => {
@@ -117,7 +125,9 @@ export function createApp({ health = createHealth(), proxyHosts = labProxyHosts(
     try {
       res.json(await fn());
     } catch (e) {
-      res.status(502).json({ service: product, ok: false, detail: e.cause?.code || e.message });
+      // 200 + ok:false, NOT 502: the lab-proxy intercepts any 502 from a lab and replaces
+      // the body with its "Lab not running" HTML page, which would hide the honest detail.
+      res.json({ service: product, ok: false, detail: e.cause?.code || e.message });
     }
   });
 
@@ -149,8 +159,31 @@ export function createApp({ health = createHealth(), proxyHosts = labProxyHosts(
     }
   });
 
-  // pi.flow sign-in at the shared PF (user path). Tokens stay server-side; the
-  // trace response shows decoded claims, never the raw token.
+  // pi.flow sign-in (user path): PingOne (primary) and the shared PF. Tokens stay
+  // server-side; the trace response shows decoded claims, never the raw token.
+  app.get('/auth/p1/start', async (req, res) => {
+    try {
+      res.json(await p1SigninStart());
+    } catch (e) {
+      res.status(e.status || 502).json({ error: e.code || 'p1_error', detail: e.message });
+    }
+  });
+
+  app.post('/auth/p1/credentials', async (req, res) => {
+    const { flowId, username, password } = req.body || {};
+    if (typeof flowId !== 'string' || typeof username !== 'string' || typeof password !== 'string' || !flowId || !username || !password || username.length > 128 || password.length > 128) {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    try {
+      const got = await p1SigninCredentials({ flowId, username, password });
+      const trace = await traceToken(got.accessToken);
+      const idTrace = got.idToken ? await traceToken(got.idToken) : null;
+      res.json({ grantedBy: got.grantedBy, issuer: got.issuer, accessToken: { ...trace }, idToken: idTrace });
+    } catch (e) {
+      res.status(e.status || 502).json({ error: e.code || 'p1_error', detail: e.message });
+    }
+  });
+
   app.get('/auth/pf/start', async (req, res) => {
     try {
       res.json(await pfSigninStart());
@@ -192,55 +225,80 @@ export function createApp({ health = createHealth(), proxyHosts = labProxyHosts(
 function page(mode, realAvailable, settingsPath) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ping Services Stub</title><link rel="stylesheet" href="/standalone-ui.css"><style>
-:root { color-scheme: light dark; --status-ok: #1d7a43; --danger-text: #aa0005; --accent: #12538d; --panel: color-mix(in srgb, canvastext 4%, transparent); }
-body { font-family: system-ui, sans-serif; margin: 0; background: canvas; color: canvastext; }
-header { padding: 1rem; border-bottom: 1px solid color-mix(in srgb, canvastext 15%, transparent); display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
-h1 { font-size: 1.1rem; margin: 0; }
+<title>Ping Services Stub</title><link rel="stylesheet" href="/standalone-ui.css"><link rel="stylesheet" href="/top-menu.css"><style>
+html { font-size: var(--fs, 16px); }
+/* shell-bar layout (app-owned per the family standard; tokens come from standalone-ui.css) */
+.shell-bar { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; padding: .65rem 1.25rem; background: var(--box-dark); color: var(--on-box); border-bottom: 3px solid transparent; border-image: var(--accent-gradient) 1; position: relative; }
+.shell-brand { display: inline-flex; align-items: center; gap: .6rem; font-weight: 700; letter-spacing: .02em; }
+.shell-logo { width: 1.9rem; height: 1.9rem; border-radius: 4px; background: var(--accent-gradient); color: var(--on-accent); display: inline-flex; align-items: center; justify-content: center; font-size: .7rem; font-weight: 700; }
+.shell-badge { padding: .1rem .55rem; border-radius: 999px; background: var(--accent-gradient); color: var(--on-accent); font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.shell-nav { display: flex; gap: .25rem; flex: 1; flex-wrap: wrap; }
+.shell-nav a { padding: .3rem .75rem; border-radius: 999px; color: var(--on-box); border: 1px solid transparent; text-decoration: none; font-size: .85rem; font-weight: 500; align-self: center; }
+.shell-nav a:hover { border-color: var(--on-box); }
+.shell-nav a[aria-current="page"] { background: var(--accent-gradient); color: var(--on-accent); font-weight: 600; }
+.shell-bar button { font: inherit; font-size: .85rem; }
+button[aria-busy="true"] { position: relative; color: transparent !important; }
+button[aria-busy="true"]::after { content: ""; position: absolute; inset: 0; margin: auto; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+td.x button { min-width: 5.5rem; }
+.shell-bar :focus-visible { outline: 3px solid var(--on-box); outline-offset: 2px; }
+@media (max-width: 600px) { .shell-bar { gap: .75rem; padding: .6rem 1rem; } .shell-nav { order: 3; flex-basis: 100%; } }
 main { padding: 1rem; max-width: 60rem; margin: 0 auto; }
-.note { padding: .5rem .75rem; border: 1px solid color-mix(in srgb, canvastext 25%, transparent); border-radius: 6px; margin: 1rem 0; }
-button { border: 1px solid color-mix(in srgb, canvastext 35%, transparent); background: transparent; color: canvastext; padding: .35rem .7rem; border-radius: 5px; cursor: pointer; }
-button[aria-pressed="true"] { background: highlight; color: highlighttext; }
-button:disabled { opacity: .5; cursor: not-allowed; }
+.banner { border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px; background: var(--surface); padding: .6rem 1rem; margin: 1rem 0; }
+h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
-td, th { border: 1px solid color-mix(in srgb, canvastext 20%, transparent); padding: .4rem .6rem; text-align: left; }
-.ok { color: var(--status-ok); } .fail { color: var(--danger-text); }
-code { font-family: ui-monospace, monospace; font-size: .85em; }
-pre { background: color-mix(in srgb, canvastext 6%, transparent); padding: .75rem; border-radius: 6px; overflow-x: auto; }
+td, th { border: 1px solid var(--border); padding: .4rem .6rem; text-align: left; }
+.ok { color: var(--status-ok); font-weight: 700; } .fail { color: var(--danger-text); font-weight: 700; }
+code { font-family: var(--font-mono); font-size: .85em; }
+pre { background: var(--surface-2); padding: .75rem; border-radius: 6px; overflow-x: auto; }
 .tt-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .5rem 0; }
-#tt-signin-dialog { border: 1px solid color-mix(in srgb, canvastext 25%, transparent); border-radius: 6px; padding: .75rem; margin: .5rem 0; display: grid; gap: .4rem; max-width: 24rem; }
+#tt-signin-dialog { border: 1px solid var(--border); border-radius: 6px; padding: .75rem; margin: .5rem 0; display: grid; gap: .4rem; max-width: 24rem; }
 #tt-signin-dialog[hidden] { display: none; }
-.shell-theme { display: inline-flex; gap: .4rem; align-items: center; font-size: .85rem; color: canvastext; }
-.shell-theme select { border: 1px solid color-mix(in srgb, canvastext 35%, transparent); background: var(--surface, canvas); color: var(--text, canvastext); border-radius: 5px; padding: .3rem .5rem; font: inherit; }
+@media (max-width: 600px) { .shell-nav { order: 3; flex-basis: 100%; } }
 </style>
 <script>(function(){try{var t=localStorage.getItem('pss.theme');if(t&&t!=='auto')document.documentElement.dataset.theme=t;}catch(e){}})();</script>
 </head>
 <body>
-<header>
-  <h1>Ping Services Stub</h1>
-  <span class="note" role="note" style="margin:0">SIMULATION: this stub makes one read-only call per service. It provisions nothing.</span>
-  <nav class="top-menu" data-testid="top-menu" aria-label="Top menu" style="display:inline-flex;flex-direction:column;align-items:flex-end;gap:.55rem;background:#16181f;color:#fcfcfc;padding:.5rem .75rem;border-radius:10px;--ping-red:#d20e0f;--ping-red-deep:#aa0005;">
-    <div class="top-menu__row" style="display:inline-flex;align-items:center;gap:.5rem;">
-      <span style="font-size:.78rem;font-weight:600;opacity:.9">Mode:</span>
-      <button id="mock-btn" aria-pressed="${mode === 'mock'}">Mock</button>
-      <button id="real-btn" aria-pressed="${mode === 'real'}" ${realAvailable ? '' : 'disabled'} title="${realAvailable ? '' : 'No settings at ' + settingsPath}">Real</button>
-      <button id="reset-btn">Reset</button>
-    </div>
-    <div class="top-menu__row" style="display:inline-flex;align-items:center;gap:.5rem;">
-      <span style="font-size:.78rem;font-weight:600;opacity:.9">Theme:</span>
-      <select id="theme-select" style="height:32px;border-radius:8px;background:transparent;color:inherit;border:1px solid rgba(255,255,255,.35);padding:0 .4rem">
-        <option value="auto">Auto</option>
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-      </select>
-      <span style="font-size:.78rem;font-weight:600;opacity:.9">Text size:</span>
-      <select id="font-select" aria-label="Font size" style="height:32px;border-radius:8px;background:transparent;color:inherit;border:1px solid rgba(255,255,255,.35);padding:0 .4rem"><option value="S">S</option><option value="M">M</option><option value="L">L</option></select>
-      <button type="button" id="font-minus" aria-label="Smaller text" style="height:32px;border-radius:8px;background:transparent;color:inherit;border:1px solid rgba(255,255,255,.35);padding:0 .6rem;cursor:pointer">A&minus;</button>
-      <button type="button" id="font-plus" aria-label="Larger text" style="height:32px;border-radius:8px;background:transparent;color:inherit;border:1px solid rgba(255,255,255,.35);padding:0 .6rem;cursor:pointer">A+</button>
-    </div>
+<header class="shell-bar" style="position:relative">
+  <span class="shell-brand"><span class="shell-logo" aria-hidden="true">PSS</span> Ping Services Stub <span class="shell-badge">${mode === 'real' ? 'Real' : 'Mock'}</span></span>
+  <nav class="shell-nav" aria-label="Sections">
+    <a href="./" aria-current="page">Services</a>
+    <a href="#result" title="Last exercise result">Exercise</a>
+    <a href="#tt-result" title="Token trace">Token trace</a>
   </nav>
+  <span class="top-menu" data-testid="top-menu">
+    <span class="top-menu__row">
+      <label class="top-menu__ctl top-menu__theme">Mode
+        <select class="top-menu__mode" id="mode-select" aria-label="Mock or Real" data-testid="mode-select">
+          <option value="mock" ${mode === 'mock' ? 'selected' : ''}>Mock</option>
+          <option value="real" data-testid="mode-real" ${realAvailable ? '' : 'disabled'} title="${realAvailable ? '' : 'Real is not configured. Mock keeps working.'}">Real</option>
+        </select>
+      </label>
+      <a class="top-menu__shelf top-menu__shelf--accent" id="shelf-link" hidden href="#" target="_blank" rel="noreferrer" title="Open the demo shelf (launcher)" data-testid="shelf-link">Shelf</a>
+      <a class="top-menu__shelf" href="https://github.com/curtismu7/ping-services-stub-LAB#readme" target="_blank" rel="noreferrer" title="Open this lab's documentation" data-testid="help-link">Help</a>
+      <button type="button" data-testid="version" title="About this lab">v0.1.0</button>
+      <button type="button" id="reset-btn" data-testid="reset">Reset</button>
+    </span>
+    <span class="top-menu__row">
+      <label class="top-menu__ctl top-menu__theme">Theme
+        <select id="theme-select" aria-label="Theme" data-testid="theme-select">
+          <option value="auto">Auto</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+      <label class="top-menu__ctl">Text size
+        <select id="font-select" aria-label="Font size" data-testid="font-select"><option value="S">S</option><option value="M">M</option><option value="L">L</option></select>
+      </label>
+      <span role="group" aria-label="Font size stepper" data-testid="font-stepper">
+        <button type="button" id="font-minus" aria-label="Smaller text">A&minus;</button>
+        <button type="button" id="font-plus" aria-label="Larger text">A+</button>
+      </span>
+    </span>
+  </span>
 </header>
 <main>
+  <div class="banner" role="note">SIMULATION: this stub makes one read-only call per service. It provisions nothing.</div>
   <p>One stub, six shared services. Each row runs one real, read-only call — the minimum that proves the wiring.</p>
   <table id="services"><thead><tr><th>Service</th><th>Probed at</th><th>Status</th><th>Exercise (real call)</th></tr></thead><tbody>
     <tr data-p="pingfederate"><td>PingFederate (shared, local)</td><td colspan="3">…</td></tr>
@@ -253,13 +311,11 @@ pre { background: color-mix(in srgb, canvastext 6%, transparent); padding: .75re
   <h2>Last exercise result</h2>
   <pre id="result">Press an Exercise button.</pre>
   <h2>Token trace</h2>
-  <p>Get a token from a real issuer, then trace it the way a resource server would: decode, verify the signature against the issuer's JWKS, and check the rules (typ, iss, exp, nbf, sub, scope, client_id) one by one. Tokens stay server-side; you see decoded claims only.</p>
+  <p>Sign in (authorization code + PKCE via <code>pi.flow</code> — the user path, tokens carry a real <code>sub</code> and scopes), then trace the access token the way a resource server would: decode, verify the signature against the issuer's JWKS, and check the rules (typ, iss, exp, nbf, sub, scope, client_id) one by one. Tokens stay server-side; you see decoded claims only.</p>
   <div class="tt-actions">
-    <button id="tt-p1">Get PingOne worker token (M2M)</button>
-    <button id="tt-pf-m2m" title="Password grant at the SE PingFederate; needs TRACE_PF_M2M_* env">Get PF token (M2M, password grant)</button>
-    <span id="tt-signin">
-      <button id="tt-pf-signin">Sign in at PingFederate</button>
-    </span>
+    <button id="tt-p1-signin" class="primary">Sign in at PingOne</button>
+    <button id="tt-pf-signin" class="primary">Sign in at PingFederate</button>
+    <button id="tt-pf-m2m" title="Machine path (password grant at the SE PingFederate); needs TRACE_PF_M2M_* env. Not a user token.">PF M2M (machine)</button>
   </div>
   <div id="tt-signin-dialog" hidden>
     <label>Username <input id="tt-user" autocomplete="username"></label>
@@ -286,27 +342,38 @@ async function refresh() {
     const btn = document.createElement('button');
     btn.textContent = 'Exercise';
     btn.onclick = async () => {
-      const res = await fetch('/api/exercise/' + s.product, { method: 'POST' });
-      document.getElementById('result').textContent = JSON.stringify(await res.json(), null, 2);
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+      const prev = btn.textContent;
+      btn.textContent = 'Running…';
+      document.getElementById('result').textContent = 'Running ' + s.product + '…';
+      try {
+        const res = await fetch('/api/exercise/' + s.product, { method: 'POST', signal: AbortSignal.timeout(30000) });
+        const d = await res.json();
+        document.getElementById('result').textContent = JSON.stringify(d, null, 2);
+      } catch (e) {
+        document.getElementById('result').textContent = 'ERROR: ' + (e.name === 'TimeoutError' ? 'no answer in 30s' : e.message);
+      } finally {
+        btn.disabled = false;
+        btn.removeAttribute('aria-busy');
+        btn.textContent = prev;
+      }
     };
     row.querySelector('td.x').replaceChildren(btn);
   }
 }
-// Shelf button (family ShelfLink behaviour): shown only when GET /api/shelf returns a URL.
+// Shelf button (family behaviour): shown only when GET /api/shelf returns a URL.
 fetch('/api/shelf', { credentials: 'omit', headers: { Accept: 'application/json' } }).then((r) => (r.ok ? r.json() : null)).then((d) => {
   if (!d || !d.shelfUrl) return;
-  const a = document.createElement('a');
-  a.className = 'shelf-link'; a.href = d.shelfUrl; a.target = '_blank'; a.rel = 'noreferrer';
-  a.title = 'Open the demo shelf (launcher)'; a.textContent = 'Shelf';
-  document.querySelector('header').appendChild(a);
+  const a = document.getElementById('shelf-link');
+  a.href = d.shelfUrl; a.hidden = false;
 }).catch(() => {});
-document.getElementById('mock-btn').onclick = () => setMode('mock');
-document.getElementById('real-btn').onclick = () => setMode('real');
 async function setMode(m) {
   const r = await fetch('/api/mode', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source: m }) });
-  if (r.status === 409) { const d = await r.json(); alert(d.detail); return; }
-  refresh(); location.reload();
+  if (!r.ok) { const d = await r.json(); alert(d.detail || d.error); return; }
+  location.reload();
 }
+document.getElementById('mode-select').onchange = (e) => setMode(e.target.value);
 document.getElementById('reset-btn').onclick = async () => { await fetch('/api/reset', { method: 'POST' }); location.reload(); };
 refresh();
 
@@ -327,7 +394,6 @@ async function post(url, body) {
   if (!r.ok) { document.getElementById('tt-result').textContent = 'ERROR ' + r.status + ': ' + (d.detail || d.error); return null; }
   return d;
 }
-document.getElementById('tt-p1').onclick = async () => { const d = await post('/api/token/pingone'); if (d) showTrace(d); };
 document.getElementById('tt-pf-m2m').onclick = async () => { const d = await post('/api/token/pf-m2m'); if (d) showTrace(d); };
 document.getElementById('tt-trace').onclick = async () => {
   const t = document.getElementById('tt-paste').value.trim();
@@ -335,24 +401,33 @@ document.getElementById('tt-trace').onclick = async () => {
   const d = await post('/api/trace', { token: t });
   if (d) showTrace(d);
 };
-let pfFlowId = null;
-document.getElementById('tt-pf-signin').onclick = async () => {
-  const r = await fetch('/auth/pf/start');
-  const d = await r.json();
-  if (!r.ok) { document.getElementById('tt-result').textContent = 'ERROR ' + r.status + ': ' + (d.detail || d.error); return; }
-  pfFlowId = d.flowId;
-  document.getElementById('tt-signin-dialog').hidden = false;
-  document.getElementById('tt-signin-state').textContent = 'Flow started at PingFederate.';
-};
+// pi.flow sign-in, either provider. PingOne is the primary (its access tokens are
+// JWTs with sub + scope); PF's access tokens are opaque, so there the ID token is
+// traced and the answer says so.
+let signinFlow = { provider: null, flowId: null };
+const providerLabel = { pingone: 'PingOne', pingfederate: 'PingFederate' };
+for (const provider of ['pingone', 'pingfederate']) {
+  document.getElementById(provider === 'pingone' ? 'tt-p1-signin' : 'tt-pf-signin').onclick = async () => {
+    const state = document.getElementById('tt-signin-state');
+    const r = await fetch(provider === 'pingone' ? '/auth/p1/start' : '/auth/pf/start');
+    const d = await r.json();
+    if (!r.ok) { document.getElementById('tt-result').textContent = 'ERROR ' + r.status + ': ' + (d.detail || d.error); return; }
+    signinFlow = { provider, flowId: d.flowId };
+    document.getElementById('tt-signin-dialog').hidden = false;
+    state.textContent = 'Flow started at ' + providerLabel[provider] + '.';
+  };
+}
 document.getElementById('tt-signin-go').onclick = async () => {
-  if (!pfFlowId) return;
-  const r = await fetch('/auth/pf/credentials', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flowId: pfFlowId, username: document.getElementById('tt-user').value, password: document.getElementById('tt-pass').value }) });
+  const { provider, flowId } = signinFlow;
+  if (!flowId) return;
+  const state = document.getElementById('tt-signin-state');
+  const r = await fetch(provider === 'pingone' ? '/auth/p1/credentials' : '/auth/pf/credentials', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flowId, username: document.getElementById('tt-user').value, password: document.getElementById('tt-pass').value }) });
   const d = await r.json();
-  if (!r.ok) { document.getElementById('tt-signin-state').textContent = (d.detail || d.error); return; }
-  document.getElementById('tt-signin-state').textContent = 'Signed in.';
+  if (!r.ok) { state.textContent = (d.detail || d.error); return; }
+  state.textContent = 'Signed in at ' + providerLabel[provider] + '.';
   document.getElementById('tt-pass').value = '';
-  // The access token may be opaque (this PF mints opaque ATs); trace the ID
-  // token instead and say so, rather than showing a dead end.
+  // PF mints opaque access tokens; trace the ID token instead and say so,
+  // rather than showing a dead end.
   const at = d.accessToken || {};
   if (at.verdict === 'not a JWT' && d.idToken && d.idToken.checks) {
     showTrace({ ...d.idToken, grantedBy: d.grantedBy + ' — access token is opaque (not a JWT); showing the ID token instead', issuer: d.issuer });
@@ -362,7 +437,7 @@ document.getElementById('tt-signin-go').onclick = async () => {
 <script>(function(){var sel=document.getElementById('theme-select');try{sel.value=localStorage.getItem('pss.theme')||'auto';}catch(e){sel.value='auto';}sel.addEventListener('change',function(){var v=sel.value;if(v==='auto')delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=v;try{localStorage.setItem('pss.theme',v);}catch(e){}});})();</script>
 <script>
 (function(){var STEP={S:"14px",M:"16px",L:"18px"},order=["S","M","L"];
-function apply(step){document.documentElement.style.fontSize=STEP[step]||"16px";try{localStorage.setItem("pss.font",step)}catch(e){}var s=document.getElementById("font-select");if(s)s.value=step;}
+function apply(step){document.documentElement.style.setProperty("--fs",STEP[step]||"16px");try{localStorage.setItem("pss.font",step)}catch(e){}var s=document.getElementById("font-select");if(s)s.value=step;}
 var sel=document.getElementById("font-select");
 sel.addEventListener("change",function(){apply(sel.value)});
 document.getElementById("font-minus").addEventListener("click",function(){apply(order[Math.max(0,order.indexOf(sel.value)-1)])});
