@@ -10,6 +10,7 @@ import {
 import { getPingOneToken, getPfM2mToken, traceToken } from './tokenTrace.js';
 import { pfSigninStart, pfSigninCredentials } from './pfSignin.js';
 import { p1SigninStart, p1SigninCredentials, p1SigninDevice, p1SigninOtp, p1SigninAssertion, p1SigninComplete } from './p1Signin.js';
+import { enrollStart, enrollComplete } from './fido2Enroll.js';
 import { shelfInfo } from './shelfLink.js';
 
 // SERVICE_MODE: 'real' (default when settings exist) or 'mock' (no outbound calls;
@@ -253,6 +254,25 @@ export function createApp({ health = createHealth(), proxyHosts = labProxyHosts(
     }
   });
 
+  // Passkey enrollment (self-contained): create a FIDO2 device for the demo user,
+  // hand the browser the creation options, then activate with the attestation.
+  app.post('/auth/p1/enroll/start', async (req, res) => {
+    try {
+      res.json(await enrollStart(settings));
+    } catch (e) {
+      res.status(e.status || 502).json({ error: e.code || 'p1_error', detail: e.message });
+    }
+  });
+
+  app.post('/auth/p1/enroll/complete', async (req, res) => {
+    const { userId, deviceId, credential } = req.body || {};
+    try {
+      res.json(await enrollComplete({ userId, deviceId, credential }));
+    } catch (e) {
+      res.status(e.status || 502).json({ error: e.code || 'p1_error', detail: e.message });
+    }
+  });
+
   app.get('/auth/pf/start', async (req, res) => {
     try {
       res.json(await pfSigninStart());
@@ -483,6 +503,7 @@ body.tt-popout #tt-signin-card { position: static; transform: none; }
     <button id="tt-p1-signin" class="primary">Sign in at PingOne</button>
     <button id="tt-pf-signin" class="primary">Sign in at PingFederate</button>
     <button id="tt-pf-m2m" title="Machine path (password grant at the SE PingFederate); needs TRACE_PF_M2M_* env. Not a user token.">PF M2M (machine)</button>
+    <button id="tt-p1-enroll" title="Create and enroll a FIDO2 passkey for the demo user (PingOne MFA API). Adds one device record — the only write in this lab.">Enroll passkey</button>
   </div>
   <div id="tt-signin-card" hidden role="dialog" aria-label="Sign in" data-testid="signin-card">
     <div class="tt-card-bar" id="tt-card-bar">
@@ -709,6 +730,7 @@ async function post(url, body) {
   return d;
 }
 document.getElementById('tt-pf-m2m').onclick = async () => { const d = await post('/api/token/pf-m2m'); if (d) showTrace(d); };
+document.getElementById('tt-p1-enroll').onclick = runPasskeyCreate;
 document.getElementById('tt-trace').onclick = async () => {
   const t = document.getElementById('tt-paste').value.trim();
   if (!t) return;
@@ -942,6 +964,60 @@ async function runPasskey(rawOptions) {
     document.getElementById('tt-otp').parentElement.hidden = false;
     cardStep('device'); // back to the picker so another device can be chosen
     state.textContent = 'Passkey failed — pick another device.';
+  }
+}
+
+// Passkey enrollment: PingOne MFA API creates the device, the browser runs
+// credentials.create() (Touch ID), the stub activates the device with the
+// attestation. The only write in this lab — guarded behind its own button.
+async function runPasskeyCreate() {
+  const state = document.getElementById('tt-signin-state');
+  const card = document.getElementById('tt-signin-card');
+  card.hidden = false;
+  cardStep('otp'); // reuse the pane: hide inputs, show status only
+  document.getElementById('tt-otp').parentElement.hidden = true;
+  state.textContent = 'Creating a passkey device for demoUser…';
+  try {
+    const s = await fetch('/auth/p1/enroll/start', { method: 'POST' });
+    const sd = await s.json();
+    if (!s.ok) { state.textContent = sd.detail || sd.error; return; }
+    const opts = typeof sd.publicKeyCredentialCreationOptions === 'string'
+      ? JSON.parse(sd.publicKeyCredentialCreationOptions) : sd.publicKeyCredentialCreationOptions;
+    const publicKey = {
+      challenge: b64ToBytes(opts.challenge),
+      rp: opts.rp || { name: 'PingOne' },
+      user: { ...opts.user, id: b64ToBytes(opts.user.id) },
+      pubKeyCredParams: (opts.pubKeyCredParams || [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }])
+        .map((p) => ({ type: p.type, alg: Number(p.alg) })),
+      timeout: opts.timeout || 60000,
+      attestation: opts.attestation || 'direct',
+    };
+    if (opts.rpId) publicKey.rp.id = opts.rpId;
+    if (Array.isArray(opts.excludeCredentials)) {
+      publicKey.excludeCredentials = opts.excludeCredentials.map((c) => ({ type: c.type || 'public-key', id: b64ToBytes(c.id) }));
+    }
+    state.textContent = 'Create your passkey (Touch ID)…';
+    const credential = await navigator.credentials.create({ publicKey });
+    if (!credential) throw new Error('No credential was returned');
+    state.textContent = 'Activating the device…';
+    const c = await fetch('/auth/p1/enroll/complete', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        userId: sd.userId, deviceId: sd.deviceId,
+        credential: {
+          id: credential.id, rawId: bytesToB64(credential.rawId), type: credential.type,
+          response: {
+            clientDataJSON: bytesToB64(credential.response.clientDataJSON),
+            attestationObject: bytesToB64(credential.response.attestationObject),
+          },
+        },
+      }),
+    });
+    const cd = await c.json();
+    if (!c.ok) { state.textContent = cd.detail || cd.error; return; }
+    state.textContent = 'Passkey enrolled (' + (cd.nickname || 'device') + ') — use it to sign in now.';
+  } catch (e) {
+    state.textContent = 'Enrollment failed: ' + (e.message || e.name);
   }
 }
 </script>
