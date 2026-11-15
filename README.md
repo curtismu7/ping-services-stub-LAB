@@ -96,3 +96,13 @@ Admin auth is `administrator` + `PF_ADMIN_CONSOLE_PASSWORD` (secrets vault) with
 ## Run from the shelf
 
 `docs/shelf-entry.json` registers it; clone next to the shelf and press Deploy (or Start once installed).
+
+---
+
+## Real mode: through the PingOne Privilege gateway
+
+**Privilege objects this lab uses:** one real, read-only probe per shared Ping service, the Privilege Agent Gateway included
+
+Settings keys: `PSS_GW_URL`, `PSS_GW_APPS`, at least one `PSS_GW_KEY_<NAME>`
+in the shared settings file (`~/Development/.env`, or the file `STANDALONE_ENV` names). The key
+is write-only: it is scrubbed from every message, error and log line.
