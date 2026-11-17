@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { loadSettings } from './settings.js';
 import { REGION_ALIAS } from './probes.js';
 
-const PF_URL = () => process.env.TRACE_PF_URL || 'https://local.ping-devops.com:9031';
+const PF_URL = () => process.env.TRACE_PF_URL || 'https://127.0.0.1:4732';
 const PF_CLIENT_ID = () => process.env.TRACE_PF_CLIENT_ID || 'id-jag-kit';
 const PF_CLIENT_SECRET = () => process.env.TRACE_PF_CLIENT_SECRET || '';
 
