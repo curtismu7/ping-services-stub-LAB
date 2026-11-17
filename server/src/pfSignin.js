@@ -4,7 +4,7 @@
 import crypto from 'node:crypto';
 import { loadSettings } from './settings.js';
 
-const PF_URL = () => process.env.TRACE_PF_URL || 'https://local.ping-devops.com:9031';
+const PF_URL = () => process.env.TRACE_PF_URL || 'https://127.0.0.1:4732';
 // The shared PF client for the pi.flow sign-in: TRACE_PF_* (env) wins, then the
 // shared settings file's PF_EXCHANGE_* keys (the credential the id-jag kit uses).
 const CLIENT = () => process.env.TRACE_PF_CLIENT_ID || '';

@@ -58,10 +58,10 @@ export async function exercisePingOneUser(settings = loadSettings()) {
   const grants = (app.body.grantTypes || []).join(', ') || '(none)';
   const redirect = (app.body.redirectUris || [])[0] || '(none)';
   const method = (app.body.tokenEndpointAuthMethod || 'client_secret_basic').toLowerCase();
-  const configured = (process.env.PINGONE_USER_REDIRECT_URI || '').replace(/\/$/, '');
+  const configured = (process.env.PINGONE_USER_REDIRECT_URI || settings.PINGONE_USER_REDIRECT_URI || '').replace(/\/$/, '');
   const okRedirect = configured
     ? (app.body.redirectUris || []).some((u) => u.replace(/\/$/, '') === configured)
-    : (app.body.redirectUris || []).some((u) => /local\.ping-devops\.com:4000/.test(u));
+    : false;
   const wants = ['AUTHORIZATION_CODE', 'REFRESH_TOKEN'].every((g) => (app.body.grantTypes || []).includes(g));
   const ok = wants && okRedirect && method === 'client_secret_post';
   return {
@@ -84,14 +84,17 @@ export async function exercisePingFederate(base) {
 }
 
 // PingGateway: /mcp must answer 401/405 without a token (enforcement point up).
-export async function exercisePingGateway(base = 'https://127.0.0.1:3036') {
-  const r = await j(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-  const ok = [401, 405].includes(r.status) || r.status === 200;
-  return { service: 'pinggateway', ok, detail: `POST /mcp → HTTP ${r.status} (401/405 = enforcement point up)` };
+export async function exercisePingGateway(base = 'http://127.0.0.1:7809') {
+  const r = await j(`${base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).catch(() => null);
+  const status = r?.status ?? 0;
+  const ok = r ? ([401, 405].includes(status) || status === 200) : false;
+  return { service: 'pinggateway', ok, detail: r ? `POST /mcp → HTTP ${status} (401/405 = enforcement point up)` : `POST /mcp failed (${base}/mcp unreachable; start the shared gateway or set EXERCISE_PG_BASE)` };
 }
 
-// Privilege Agent Gateway: root answers 200 (listener up).
+// Privilege Agent Gateway: root answers 200 (listener up). No shared default —
+// the operator names it with EXERCISE_PRIV_BASE (or PRIVILEGE_GATEWAY_HOST/PORT).
 export async function exercisePrivilegeGateway(base) {
+  if (!base) return { service: 'privilege-gateway', ok: false, detail: 'not configured: set EXERCISE_PRIV_BASE (no shared default port exists)' };
   const r = await j(base);
   return { service: 'privilege-gateway', ok: r.status === 200, detail: `root HTTP ${r.status}` };
 }

@@ -7,9 +7,9 @@ One stub that exercises **every shared Ping service the family deploys** (rule 2
 
 | Service | Where | What the stub does |
 |---|---|---|
-| PingFederate (shared, local) | `127.0.0.1:9031` via ping-shared | OIDC discovery + JWKS fetch |
-| PingGateway (shared, local) | `127.0.0.1:3036` | `POST /mcp` unauthenticated → 401/405 proves the enforcement point |
-| Privilege Agent Gateway (shared, local) | `127.0.0.1:8620` | root listener probe (mcpgw REST API; the old `:8623` listener is gone since the v1.261112-NYL binary swap) |
+| PingFederate (shared, local) | `127.0.0.1:4732` via ping-shared | OIDC discovery + JWKS fetch |
+| PingGateway (shared, local) | `127.0.0.1:7809` via ping-shared | `POST /mcp` unauthenticated → 401/405 proves the enforcement point |
+| Privilege Agent Gateway | off by default — set `PRIVILEGE_GATEWAY_HOST`/`PRIVILEGE_GATEWAY_PORT` (probe) and `EXERCISE_PRIV_BASE` (exercise) | root listener probe |
 | PingOne (SaaS) | `auth.pingone.<region>` | worker `client_credentials` + populations read |
 | PingOne Privilege (SaaS console) | `console.privilege.pingone.com` | reachability probe (registration stays console-manual) |
 | PingFederate (SE K8s, owner namespace) | host recorded in the owner notes | discovery + heartbeat |
@@ -69,7 +69,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 Tokens stay server-side; the page shows decoded claims and rule-by-rule pass/fail only. The trace never replays the token against a resource server.
 
-To trace the shared local PF (self-signed cert), run the stub with `NODE_EXTRA_CA_CERTS=deploy/pf-rootCA.pem TRACE_PF_URL=https://127.0.0.1:4732 TRACE_PF_CLIENT_ID=id-jag-kit TRACE_PF_CLIENT_SECRET=...` (the secret lives in `~/.config/demo-kit/provisioning.json` under `pingfederate.idJagKitClientSecret`).
+Trace targets default to ping-shared's fixed ports (PF engine `https://127.0.0.1:4732`); override with `TRACE_PF_URL`. With the shared PF's self-signed cert, run the stub with `NODE_EXTRA_CA_CERTS=deploy/pf-rootCA.pem TRACE_PF_URL=https://127.0.0.1:4732 TRACE_PF_CLIENT_ID=id-jag-kit TRACE_PF_CLIENT_SECRET=...` (the secret lives in `~/.config/demo-kit/provisioning.json` under `pingfederate.idJagKitClientSecret`).
 
 ### PF sign-in prerequisites (shared local PingFederate)
 

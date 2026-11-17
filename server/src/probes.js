@@ -51,33 +51,55 @@ async function probePrivilegeConsole(settings) {
 // a TCP connect reports UP while the port is held by a dead shim/proxy that answers 502
 // (the metadata shim in front of a stopped PingFederate did exactly that). The URL that
 // the HTTP probe checks is what the UP/DOWN cell shows.
-// privilege-gateway: since the 2026-11-12 v1.261112-NYL binary swap the mcpgw :8623
-// listener is GONE (the binary derives :443 from SERVER_URL); its published REST API
-// on 8620 is the port that still answers on the host.
-const SHARED_PORTS = {
-  // The shared PF cert's SAN covers local.ping-devops.com only — a probe by IP or
-  // host.docker.internal dies on TLS before it can report the service's real state.
-  pingfederate: { host: 'local.ping-devops.com', port: 9031, url: '127.0.0.1:9031/pf/heartbeat.ping (host)', probe: '/pf/heartbeat.ping', ok: [200], tls: true },
-  pinggateway: { host: 'local.ping-devops.com', port: 3036, url: '127.0.0.1:3036/mcp (host)', probe: '/mcp', ok: [200, 401, 405], tls: true },
-  'privilege-gateway': { host: 'local.ping-devops.com', port: 8620, url: '127.0.0.1:8620/ (host; mcpgw REST API, post-261112)', probe: '/', ok: [200], tls: false },
-};
+// Defaults are ping-shared's fixed infrastructure ports (PF engine 4732, PingGateway
+// 7809). The Privilege Agent Gateway has no ping-shared default; it stays configurable
+// (PRIVILEGE_GATEWAY_HOST/PORT) and reports DOWN with a hint until the operator names it.
+// Each target can be repointed with <PRODUCT>_HOST / <PRODUCT>_PORT for a non-default
+// stack (for example an AI-DEMO2 checkout on its own ports).
+const pingfederateTarget = () => ({
+  host: process.env.PINGFEDERATE_HOST || '127.0.0.1',
+  port: Number(process.env.PINGFEDERATE_PORT || 4732),
+  probe: '/pf/heartbeat.ping', ok: [200], tls: true,
+});
+const pinggatewayTarget = () => ({
+  host: process.env.PINGGATEWAY_HOST || '127.0.0.1',
+  port: Number(process.env.PINGGATEWAY_PORT || 7809),
+  probe: '/health', ok: [200], tls: false,
+});
+const privilegeGatewayTarget = () => ({
+  host: process.env.PRIVILEGE_GATEWAY_HOST || '',
+  port: Number(process.env.PRIVILEGE_GATEWAY_PORT || 0),
+  probe: '/', ok: [200], tls: false,
+});
 
-async function probeShared(product) {
-  const t = SHARED_PORTS[product];
-  const host = t.host;
+function sharedUrl(t) {
   const scheme = t.tls ? 'https' : 'http';
-  const up = await tcpProbe(host, t.port);
-  if (!up) return { product, url: t.url, ok: false, detail: `nothing on ${host}:${t.port} (start the shared stack)` };
+  return `${scheme}://${t.host}:${t.port}${t.probe}`;
+}
+
+async function probeTarget(product, t) {
+  if (!t.host || !t.port) {
+    return { product, url: '', ok: false, detail: `not configured: set ${product === 'privilege-gateway' ? 'PRIVILEGE_GATEWAY_HOST and PRIVILEGE_GATEWAY_PORT' : `${product.toUpperCase()}_HOST and ${product.toUpperCase()}_PORT`} (or start the shared stack)` };
+  }
+  const up = await tcpProbe(t.host, t.port);
+  if (!up) return { product, url: `${t.host}:${t.port}${t.probe}`, ok: false, detail: `nothing on ${t.host}:${t.port} (start the shared stack)` };
   // TCP is open: make the real call so a half-dead front (a shim, nginx, a proxy to a
   // stopped container) reports DOWN, not UP.
   try {
-    const init = t.probe === '/mcp' ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' } : {};
-    const r = await fetch(`${scheme}://${host}:${t.port}${t.probe}`, { ...init, signal: AbortSignal.timeout(5000) });
+    const scheme = t.tls ? 'https' : 'http';
+    const r = await fetch(`${scheme}://${t.host}:${t.port}${t.probe}`, { signal: AbortSignal.timeout(5000) });
     const ok = t.ok.includes(r.status);
-    return { product, url: t.url, ok, detail: ok ? `HTTP ${r.status} on ${host}:${t.port}` : `port ${host}:${t.port} open but the service answered HTTP ${r.status} (start the shared stack)` };
+    return { product, url: `${t.host}:${t.port}${t.probe}`, ok, detail: ok ? `HTTP ${r.status} on ${t.host}:${t.port}` : `port ${t.host}:${t.port} open but the service answered HTTP ${r.status} (start the shared stack)` };
   } catch (e) {
-    return { product, url: t.url, ok: false, detail: `port ${host}:${t.port} open but the call failed (${e.cause?.code || e.message})` };
+    return { product, url: `${t.host}:${t.port}${t.probe}`, ok: false, detail: `port ${t.host}:${t.port} open but the call failed (${e.cause?.code || e.message})` };
   }
+}
+
+async function probeShared(product) {
+  const t = product === 'pingfederate' ? pingfederateTarget()
+    : product === 'pinggateway' ? pinggatewayTarget()
+    : privilegeGatewayTarget();
+  return probeTarget(product, t);
 }
 
 export async function probeAll(settings = loadSettings()) {

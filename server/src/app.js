@@ -28,11 +28,13 @@ const MOCK_SERVICES = [
   { product: 'se-pingfederate', url: 'mock://se-pingfederate', ok: true, detail: 'MOCK: canned probe' },
 ];
 
-// Exercise base URLs: the shared PF cert's SAN covers local.ping-devops.com, not loopback
-// (and the container reaches the host via PROBE_HOST), so the host name comes from env.
-const PF_BASE = process.env.EXERCISE_PF_BASE || 'https://local.ping-devops.com:9031';
-const PG_BASE = process.env.EXERCISE_PG_BASE || 'https://local.ping-devops.com:3036';
-const PRIV_BASE = process.env.EXERCISE_PRIV_BASE || 'http://host.docker.internal:8620/';
+// Exercise base URLs: ping-shared's fixed ports by default (PF engine 4732 self-signed,
+// PingGateway 7809 plain http). The Privilege gateway has no shared default — it is
+// env-only and its exercise reports honestly when it is not set. Override any of them
+// with EXERCISE_*_BASE to point at another stack.
+const PF_BASE = process.env.EXERCISE_PF_BASE || 'https://127.0.0.1:4732';
+const PG_BASE = process.env.EXERCISE_PG_BASE || 'http://127.0.0.1:7809';
+const PRIV_BASE = process.env.EXERCISE_PRIV_BASE || '';
 
 const EXERCISERS = {
   pingone: () => exercisePingOne(settings),

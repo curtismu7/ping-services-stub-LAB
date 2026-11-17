@@ -38,7 +38,7 @@ function p1Client(settings) {
   const id = process.env.TRACE_P1_CLIENT_ID || settings.PINGONE_USER_CLIENT_ID || '';
   const secret = process.env.TRACE_P1_CLIENT_SECRET || settings.PINGONE_USER_CLIENT_SECRET || '';
   const redirectUri = process.env.TRACE_P1_REDIRECT_URI || settings.PINGONE_USER_REDIRECT_URI
-    || 'https://local.ping-devops.com:4000/api/auth/oauth/user/callback';
+    || '';
   const base = `https://auth.pingone.${region}/${envId}`;
   return { envId, region, id, secret, redirectUri, base };
 }
