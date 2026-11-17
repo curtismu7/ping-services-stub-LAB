@@ -20,8 +20,14 @@
   gap: 0.35rem;
   font-size: 0.78rem;
   font-weight: 600;
-  /* Same theme-aware text as the control fill: black on light, white on dark (owner, 2026-11-13). */
-  color: var(--tm-ctl-fg);
+  /* Same theme-aware text as the control fill: dark on light, white on dark (owner, 2026-11-13). */
+  color: var(--text);
+}
+
+/* Inside the standard shell-bar the background is --box-dark in BOTH themes, so the
+   theme-aware --text above is dark-on-dark in the light theme. Labels there use --on-box. */
+.shell-bar .top-menu__ctl {
+  color: var(--on-box);
 }
 
 .top-menu button,
@@ -31,11 +37,11 @@
   font-size: 0.85rem;
   padding: 0 0.7rem;
   border-radius: 8px;
-  /* Grey fill + strong border so the controls read on any header, light or dark (owner, 2026-11-13).
-     Light: light grey fill, near-black border and text. Dark: dark grey fill, white border and text. */
-  background: var(--tm-ctl-bg);
-  color: var(--tm-ctl-fg);
-  border: 1px solid var(--tm-ctl-border);
+  /* Filled control + strong border so the controls read on any header, light or dark (owner, 2026-11-13).
+     Light: pale fill, near-black border and text. Dark: dark fill, white border and text. */
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--text);
   cursor: pointer;
   text-decoration: none;
   display: inline-flex;
@@ -43,30 +49,10 @@
   gap: 0.35rem;
 }
 
-/* Control chrome tokens: the dark block mirrors the family pattern in standalone-ui.css
-   (dark follows the system setting unless data-theme is set). */
-.top-menu {
-  --tm-ctl-bg: #d9d9d9;
-  --tm-ctl-fg: #111;
-  --tm-ctl-border: #111;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .top-menu {
-    --tm-ctl-bg: #2a2d35;
-    --tm-ctl-fg: #fcfcfc;
-    --tm-ctl-border: #fcfcfc;
-  }
-}
-:root[data-theme="dark"] .top-menu {
-  --tm-ctl-bg: #2a2d35;
-  --tm-ctl-fg: #fcfcfc;
-  --tm-ctl-border: #fcfcfc;
-}
-
 .top-menu button:hover,
 .top-menu select:hover,
 .top-menu a.top-menu__shelf:hover {
-  border-color: var(--tm-ctl-fg);
+  border-color: var(--text);
   filter: brightness(1.08);
 }
 
@@ -187,3 +173,11 @@
 .shell-bar a.shelf-link::after { content: " \2197"; }
 .top-menu a.shelf-link:hover,
 .shell-bar a.shelf-link:hover { background: var(--accent-deep); border-color: var(--on-accent); }
+
+/* Release notes dialog (what the version button opens when the lab passes no onVersion). */
+.rn-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgb(0 0 0 / 0.45); }
+.rn-dialog { width: min(34rem, calc(100vw - 2rem)); max-height: min(80vh, 40rem); overflow: auto; border: 1px solid var(--border, #ccc); border-radius: 10px; padding: 1.25rem 1.5rem; background: var(--surface, #fff); color: var(--text, #111); }
+.rn-dialog h2 { margin-top: 0; }
+.rn-dialog ul { padding-left: 1.2rem; }
+.rn-dialog li { margin: 0.4rem 0; }
+.rn-dialog code { overflow-wrap: anywhere; }

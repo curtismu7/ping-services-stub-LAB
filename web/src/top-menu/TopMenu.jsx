@@ -1,0 +1,187 @@
+import React, { useState } from "react";
+import ReleaseNotes from "./ReleaseNotes.jsx";
+
+/**
+ * TopMenu: the standardized right side of the shell bar for every -LAB app.
+ * Owner-approved layout (2026-11-12): two right-aligned control rows, brand + nav on
+ * the top line at the left; Sign in stands alone in a centered slot on the top line.
+ * Owner-approved order, each control prop-gated — a lab that does not
+ * need one simply omits the prop and it renders nothing; the order of the rest
+ * never changes:
+ *
+ *   1. mode      Mock/Real dropdown (accent-filled so it stands out), wired to /api/mode
+ *   2. vertical  industry selector (where the lab has verticals)
+ *   3. theme     Light / Dark / Auto dropdown
+ *   4. fontSize  S / M / L dropdown + A- / A+ steppers (percent-based root font size)
+ *   Row 1: mode, vertical, present, talkTrack, shelf, help, version, reset
+ *   Row 2: theme (Light/Dark/Auto), fontSize (S/M/L + A-/A+)
+ *   Sign in: stands alone in a centered slot on the top line (top-menu__signin-slot)
+ *   +  extra        lab-specific controls ride at the end with the same chrome
+ *
+ * State (theme, fontSize) lives in the app; TopMenu is controlled, so tests keep
+ * driving the same state. Styles come from the vendored top-menu.css.
+ *
+ * Props:
+ *   mode             { value: 'mock'|'real', onChange(v), realAvailable, realHint, realHintAlways? } — omit for mock-only labs.
+ *                    realHint is the Real option's tooltip while Real is unavailable; realHintAlways: true also shows it when Real is available
+ *   vertical         { value, onChange, options: [ids] } — omit when the lab has no verticals
+ *   theme            { value: 'auto'|'light'|'dark', onChange }
+ *   fontSize         { value: 'S'|'M'|'L', onChange } — S/M/L map to 14/16/18px root
+ *   present         { active, onToggle, label='Present (P)' } — omit when the lab has no presenter mode
+ *   talkTrack       { active, onToggle } — omit when the lab has no presenter script
+ *   shelfUrl        optional; when given renders the Shelf link, otherwise pass your own <ShelfLink/> via children
+ *   help            { href?, onClick?, label?, title? } — the lab's documentation; omit when there are no docs.
+ *                    With href: a link that opens in a new tab. Without href: a button that calls onClick
+ *                    (default: go to #readme). label defaults to "Help", title to "Open this lab's documentation"
+ *   version         string — About/version button label (e.g. "v1.4.2", from the lab's VERSION file); omit when unknown
+ *   onVersion       fn — what the version button does when clicked. Omit it and the button opens the shared
+ *                     release-notes dialog (ReleaseNotes.jsx) by itself; a lab-specific action replaces that
+ *   onReset          fn; when given renders the Reset button
+ *   showSignIn       bool — true only when Real mode is active and the lab needs auth
+ *   signedIn         { subject, onSignIn, onSignOut } — when signed in shows "Signed in as <subject>" + Sign out
+ *   extra            optional node (lab-specific buttons, workspace switch, …)
+ *   children         optional node rendered at the very end (e.g. an existing <ShelfLink/>)
+ */
+const FONT_STEPS = { S: "14px", M: "16px", L: "18px" };
+export const applyFontSize = (step) => {
+  const px = FONT_STEPS[step] || FONT_STEPS.M;
+  document.documentElement.style.setProperty("--fs", px);
+};
+
+export default function TopMenu({
+  mode,
+  vertical,
+  theme,
+  fontSize,
+  present,
+  talkTrack,
+  shelfUrl,
+  help,
+  version,
+  onReset,
+  showSignIn = false,
+  signedIn,
+  extra,
+  children,
+}) {
+  const themeValue = theme?.value ?? "auto";
+  const fontValue = fontSize?.value ?? "M";
+  // Rule (owner, 2026-11-17): the version button never does nothing. With onVersion the lab decides
+  // what the click does; without it the button opens the shared release-notes dialog itself.
+  const [notesOpen, setNotesOpen] = useState(false);
+  const onVersionClick = onVersion || (() => setNotesOpen(true));
+  return (
+    <span className="top-menu shell-right" data-testid="top-menu">
+      {/* Sign in stands alone: the app shell centers this slot on the bar's top line */}
+      {showSignIn && signedIn && (signedIn.subject
+        ? (
+          <span className="top-menu__signin-slot top-menu__ctl">
+            Signed in as <strong data-testid="who">{signedIn.subject}</strong>
+            <button type="button" onClick={signedIn.onSignOut} data-testid="sign-out">Sign out</button>
+          </span>
+        )
+        : (
+          <span className="top-menu__signin-slot">
+            <button type="button" className="top-menu__signin" onClick={signedIn.onSignIn} data-testid="sign-in">Sign in</button>
+          </span>
+        ))}
+      {/* row 1 */}
+      <span className="top-menu__row">
+        {mode && (
+          <label className="top-menu__ctl top-menu__theme">
+            Mode
+            <select
+              className="top-menu__mode"
+              aria-label="Mock or Real"
+              data-testid="mode-select"
+              value={mode.value}
+              onChange={(e) => mode.onChange(e.target.value)}
+            >
+              <option value="mock">Mock</option>
+              <option
+                value="real"
+                data-testid="mode-real"
+                disabled={mode.realAvailable === false}
+                title={mode.realAvailable === false ? (mode.realHint || "Real is not configured. Mock keeps working.") : (mode.realHintAlways ? (mode.realHint || undefined) : undefined)}
+              >
+                Real
+              </option>
+            </select>
+          </label>
+        )}
+        {vertical && vertical.options?.length > 0 && (
+          <label className="top-menu__ctl">
+            Vertical
+            <select aria-label="Vertical" data-testid="vertical-select" value={vertical.value} onChange={(e) => vertical.onChange(e.target.value)}>
+              {vertical.options.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </label>
+        )}
+        {present && (
+          <button type="button" aria-pressed={present.active} data-testid="presenter" onClick={present.onToggle}>
+            {present.active ? "Exit present (Esc)" : (present.label || "Present (P)")}
+          </button>
+        )}
+        {talkTrack && (
+          <button type="button" aria-pressed={talkTrack.active} data-testid="talk-track-toggle" title="Show the presenter script alongside the page" onClick={talkTrack.onToggle}>
+            Talk track
+          </button>
+        )}
+        {shelfUrl && (
+          <a className="top-menu__shelf top-menu__shelf--accent" href={shelfUrl} target="_blank" rel="noreferrer" title="Open the demo shelf (launcher)" data-testid="shelf-link">
+            Shelf
+          </a>
+        )}
+        {help && (help.href
+          ? (
+            <a className="top-menu__shelf" href={help.href} onClick={help.onClick} target="_blank" rel="noreferrer" title={help.title || "Open this lab's documentation"} data-testid="help-link">
+              {help.label || "Help"}
+            </a>
+          )
+          : (
+            <button type="button" className="top-menu__shelf" onClick={help.onClick || (() => { window.location.hash = "#readme"; })} title={help.title || "Open this lab's documentation"} data-testid="help-link">
+              {help.label || "Help"}
+            </button>
+          ))}
+        {version && (
+          <button type="button" data-testid="version" title="About this lab" onClick={onVersionClick}>{version}</button>
+        )}
+        {onReset && (
+          <button type="button" data-testid="reset" onClick={onReset}>Reset</button>
+        )}
+        {extra && <span className="top-menu__extra">{extra}</span>}
+        {children}
+      </span>
+      {/* row 2: theme + text size */}
+      <span className="top-menu__row">
+        {theme && (
+          <label className="top-menu__ctl top-menu__theme">
+            Theme
+            <select aria-label="Theme" data-testid="theme-select" value={themeValue} onChange={(e) => theme.onChange(e.target.value)}>
+              <option value="auto">Auto</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
+        )}
+        {fontSize && (
+          <>
+            <label className="top-menu__ctl">
+              Text size
+              <select aria-label="Font size" data-testid="font-select" value={fontValue} onChange={(e) => fontSize.onChange(e.target.value)}>
+                <option value="S">S</option>
+                <option value="M">M</option>
+                <option value="L">L</option>
+              </select>
+            </label>
+            <span role="group" aria-label="Font size stepper" data-testid="font-stepper">
+              <button type="button" aria-label="Smaller text" disabled={fontValue === "S"} onClick={() => fontSize.onChange(fontValue === "L" ? "M" : "S")}>A−</button>
+              <button type="button" aria-label="Larger text" disabled={fontValue === "L"} onClick={() => fontSize.onChange(fontValue === "M" ? "L" : "M")}>A+</button>
+            </span>
+          </>
+        )}
+      </span>
+      {!onVersion && notesOpen && <ReleaseNotes version={version || ""} onClose={() => setNotesOpen(false)} />}
+    </span>
+  );
+}
