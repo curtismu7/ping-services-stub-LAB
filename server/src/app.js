@@ -87,7 +87,7 @@ export function createApp({ health = createHealth(), proxyHosts = labProxyHosts(
   });
 
   app.get('/standalone-ui.css', (_req, res) => { res.type('css').send(fs.readFileSync(new URL('../../standalone-ui.css', import.meta.url))); });
-  app.get('/top-menu.css', (_req, res) => { res.type('css').send(fs.readFileSync(new URL('../../top-menu.css', import.meta.url))); });
+  app.get('/top-menu.css', (_req, res) => { res.type('css').send(fs.readFileSync(new URL('../../web/src/top-menu/top-menu.css', import.meta.url))); });
   // The presenter script (docs/talk-track.md), served as plain text for the Talk-track panel.
   app.get('/api/talk-track', (_req, res) => {
     try {
