@@ -92,9 +92,9 @@ export async function exercisePingGateway(base = 'http://127.0.0.1:7809') {
 }
 
 // Privilege Agent Gateway: root answers 200 (listener up). No shared default —
-// the operator names it with EXERCISE_PRIV_BASE (or PRIVILEGE_GATEWAY_HOST/PORT).
+// the user supplies PRIVILEGE_GATEWAY_URL (or EXERCISE_PRIV_BASE).
 export async function exercisePrivilegeGateway(base) {
-  if (!base) return { service: 'privilege-gateway', ok: false, detail: 'not configured: set EXERCISE_PRIV_BASE (no shared default port exists)' };
+  if (!base) return { service: 'privilege-gateway', ok: false, detail: 'not configured: set PRIVILEGE_GATEWAY_URL to your own Privilege gateway (there is no default)' };
   const r = await j(base);
   return { service: 'privilege-gateway', ok: r.status === 200, detail: `root HTTP ${r.status}` };
 }
