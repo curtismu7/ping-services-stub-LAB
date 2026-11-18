@@ -9,6 +9,18 @@ services:
     environment:
       PORT: "6300"
       SHELF_URL: ${SHELF_URL:-http://127.0.0.1:4400}
+      # Probe/exercise targets (probe.js/exercises.js): ping-shared fixed ports by default, override for another stack.
+      PINGFEDERATE_HOST: ${PINGFEDERATE_HOST:-}
+      PINGFEDERATE_PORT: ${PINGFEDERATE_PORT:-}
+      PINGGATEWAY_HOST: ${PINGGATEWAY_HOST:-}
+      PINGGATEWAY_PORT: ${PINGGATEWAY_PORT:-}
+      PINGGATEWAY_TLS: ${PINGGATEWAY_TLS:-}
+      PRIVILEGE_GATEWAY_HOST: ${PRIVILEGE_GATEWAY_HOST:-}
+      PRIVILEGE_GATEWAY_PORT: ${PRIVILEGE_GATEWAY_PORT:-}
+      PRIVILEGE_GATEWAY_TLS: ${PRIVILEGE_GATEWAY_TLS:-}
+      EXERCISE_PF_BASE: ${EXERCISE_PF_BASE:-}
+      EXERCISE_PG_BASE: ${EXERCISE_PG_BASE:-}
+      EXERCISE_PRIV_BASE: ${EXERCISE_PRIV_BASE:-}
       HOST: "0.0.0.0"
       # Names besides loopback the stub answers to (as <name>:6300). The default is the Host the family lab-proxy sends.
       LAB_ALLOWED_HOSTS: ${LAB_ALLOWED_HOSTS:-ping-services-stub.local.ping-devops.com}

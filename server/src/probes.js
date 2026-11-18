@@ -73,12 +73,16 @@ const pingfederateTarget = () => ({
 const pinggatewayTarget = () => ({
   host: process.env.PINGGATEWAY_HOST || '127.0.0.1',
   port: Number(process.env.PINGGATEWAY_PORT || 7809),
-  probe: '/health', ok: [200], tls: false,
+  probe: '/health', ok: [200],
+  // ping-shared's 7809 is plain http; AI-DEMO2's 3036 serves TLS (self-signed). Override with PINGGATEWAY_TLS=true.
+  tls: String(process.env.PINGGATEWAY_TLS || '').toLowerCase() === 'true' || (process.env.PINGGATEWAY_PORT === '3036'),
 });
 const privilegeGatewayTarget = () => ({
   host: process.env.PRIVILEGE_GATEWAY_HOST || '',
   port: Number(process.env.PRIVILEGE_GATEWAY_PORT || 0),
-  probe: '/', ok: [200], tls: false,
+  probe: '/', ok: [200],
+  // The mcpgw REST API on the host is plain http; PRIVILEGE_GATEWAY_TLS=true for a TLS front.
+  tls: String(process.env.PRIVILEGE_GATEWAY_TLS || '').toLowerCase() === 'true',
 });
 
 function sharedUrl(t) {
