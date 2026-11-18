@@ -664,9 +664,9 @@ async function refresh() {
       cell.style.whiteSpace = 'nowrap';
       cell.append(btn, ' ', startBtn);
       row.querySelector('td.x').replaceChildren(cell);
-      return;
+    } else {
+      row.querySelector('td.x').replaceChildren(btn);
     }
-    row.querySelector('td.x').replaceChildren(btn);
   }
 }
 // Shelf button (family behaviour): shown only when GET /api/shelf returns a URL.
