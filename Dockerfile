@@ -4,7 +4,7 @@ COPY package.json ./
 RUN npm install --omit=dev
 COPY server ./server
 COPY standalone-ui.css ./
-COPY web/src/top-menu/top-menu.css ./top-menu.css
+COPY web/src/top-menu/top-menu.css ./web/src/top-menu/top-menu.css
 COPY deploy/pf-rootCA.pem ./deploy/pf-rootCA.pem
 COPY docs/talk-track.md ./docs/talk-track.md
 # The shared local PingFederate serves a mkcert cert; trust the current root (kept fresh by deploy/pf-rootCA.pem).
