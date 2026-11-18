@@ -715,6 +715,45 @@ document.getElementById('reset-btn').onclick = async () => { await fetch('/api/r
 })();
 refresh();
 
+
+// Talk track panel: drag by the heading, resize by the left edge, pop out to a real window.
+(function(){
+  const panel = document.getElementById('talktrack-panel');
+  const pop = document.createElement('button');
+  pop.type = 'button'; pop.textContent = 'Pop out'; pop.setAttribute('data-testid', 'talk-track-popout');
+  pop.style.cssText = 'position:absolute;top:.5rem;right:.5rem;';
+  panel.appendChild(pop);
+  let popWin = null;
+  pop.onclick = () => {
+    if (popWin && !popWin.closed) { popWin.focus(); return; }
+    popWin = window.open('', 'pss-talk-track-' + Date.now(), 'width=520,height=640');
+    if (!popWin) return;
+    popWin.document.write('<!doctype html><html><head><title>Talk track</title><style>body{font-family:sans-serif;white-space:pre-wrap;padding:1rem}</style></head><body>' + document.getElementById('talktrack-body').innerHTML + '</body></html>');
+    popWin.document.close();
+  };
+  window.addEventListener('beforeunload', () => { if (popWin && !popWin.closed) popWin.close(); });
+  const h2 = panel.querySelector('h2');
+  if (h2) { h2.style.cursor = 'move'; h2.tabIndex = 0;
+    let sx = 0, sy = 0, ox = 0, oy = 0, dragging = false;
+    h2.addEventListener('keydown', (e) => {
+      const step = e.shiftKey ? 50 : 10; let moved = true;
+      if (e.key === 'ArrowLeft') ox -= step; else if (e.key === 'ArrowRight') ox += step;
+      else if (e.key === 'ArrowUp') oy -= step; else if (e.key === 'ArrowDown') oy += step; else moved = false;
+      if (moved) { e.preventDefault(); panel.style.position = 'fixed'; panel.style.right = 'auto'; panel.style.transform = 'translate(' + ox + 'px, ' + oy + 'px)'; }
+    });
+    h2.addEventListener('pointerdown', (e) => { dragging = true; sx = e.clientX; sy = e.clientY; h2.setPointerCapture(e.pointerId); });
+    h2.addEventListener('pointermove', (e) => { if (!dragging) return; ox += e.clientX - sx; oy += e.clientY - sy; sx = e.clientX; sy = e.clientY; panel.style.position = 'fixed'; panel.style.right = 'auto'; panel.style.transform = 'translate(' + ox + 'px, ' + oy + 'px)'; });
+    h2.addEventListener('pointerup', () => { dragging = false; });
+  }
+  const edge = document.createElement('div');
+  edge.style.cssText = 'position:absolute;top:0;left:0;bottom:0;width:6px;cursor:ew-resize;background:transparent;';
+  panel.appendChild(edge);
+  let rx = 0, rw = 0, resizing = false;
+  edge.addEventListener('pointerdown', (e) => { resizing = true; rx = e.clientX; rw = panel.getBoundingClientRect().width; edge.setPointerCapture(e.pointerId); });
+  edge.addEventListener('pointermove', (e) => { if (!resizing) return; const w = Math.max(280, Math.min(window.innerWidth - 40, rw - (e.clientX - rx))); panel.style.width = w + 'px'; });
+  edge.addEventListener('pointerup', () => { resizing = false; });
+})();
+
 // ---- token trace ----
 function showTrace(d) {
   if (!d || !d.checks) { ttPane.set(d, '<pre style="margin:0">' + esc(JSON.stringify(d, null, 2)) + '</pre>'); return; }
