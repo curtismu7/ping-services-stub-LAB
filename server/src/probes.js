@@ -41,6 +41,15 @@ async function probePingoneSaas(settings) {
   return { product: 'pingone', url, ok: r.ok, status: r.status };
 }
 
+async function probePingoneUserApp(settings) {
+  const env = settings.PINGONE_ENVIRONMENT_ID;
+  if (!env) return { product: 'pingone-user', url: '', ok: false, detail: 'no PINGONE_ENVIRONMENT_ID in settings (the row checks the user app record the pi.flow sign-in depends on)' };
+  const region = REGION_ALIAS[String(settings.PINGONE_REGION || 'com').toLowerCase()] || 'com';
+  const url = `https://auth.pingone.${region}/${env}/as/.well-known/openid-configuration`;
+  const r = await fetchProbe(url);
+  return { product: 'pingone-user', url, ok: r.ok, status: r.status, detail: r.ok ? 'environment issuer answers (the app record itself is checked by the Test button)' : 'issuer unreachable' };
+}
+
 async function probePrivilegeConsole(settings) {
   const url = settings.PRIVILEGE_CONSOLE_URL || 'https://console.privilege.pingone.com/';
   const r = await fetchProbe(url, { ok: [200, 302, 401, 403] });
@@ -103,15 +112,16 @@ async function probeShared(product) {
 }
 
 export async function probeAll(settings = loadSettings()) {
-  const [pf, pg, priv, p1, p1priv, sepf] = await Promise.all([
+  const [pf, pg, priv, p1, p1user, p1priv, sepf] = await Promise.all([
     probeShared('pingfederate'),
     probeShared('pinggateway'),
     probeShared('privilege-gateway'),
     probePingoneSaas(settings),
+    probePingoneUserApp(settings),
     probePrivilegeConsole(settings),
     probeSePf(settings),
   ]);
-  return [pf, pg, priv, p1, p1priv, sepf];
+  return [pf, pg, priv, p1, p1user, p1priv, sepf];
 }
 
 export { tcpProbe };
