@@ -9,7 +9,7 @@ One stub that exercises **every shared Ping service the family deploys** (rule 2
 |---|---|---|
 | PingFederate (shared, local) | `127.0.0.1:4732` via ping-shared | OIDC discovery + JWKS fetch |
 | PingGateway (shared, local) | `127.0.0.1:7809` via ping-shared | `POST /mcp` unauthenticated → 401/405 proves the enforcement point |
-| Privilege Agent Gateway | off by default — set `PRIVILEGE_GATEWAY_HOST`/`PRIVILEGE_GATEWAY_PORT` (probe) and `EXERCISE_PRIV_BASE` (exercise) | root listener probe |
+| Privilege Agent Gateway | **bring your own**: no default address. Set `PRIVILEGE_GATEWAY_URL` (environment or the settings file); until then the row says "not configured" | root listener probe |
 | PingOne (SaaS) | `auth.pingone.<region>` | worker `client_credentials` + populations read |
 | PingOne Privilege (SaaS console) | `console.privilege.pingone.com` | reachability probe (registration stays console-manual) |
 | PingFederate (SE K8s, owner namespace) | host recorded in the owner notes | discovery + heartbeat |
@@ -52,7 +52,7 @@ npm run doctor       # PASS/FAIL per service
 npm test
 ```
 
-Docker (OrbStack; reads `~/Development/.env` read-only):
+Docker (OrbStack; reads the settings file, `~/Development/.env` by default, read-only):
 
 ```sh
 docker compose -f deploy/docker-compose.yml up -d --build
@@ -73,13 +73,27 @@ Trace targets default to ping-shared's fixed ports (PF engine `https://127.0.0.1
 
 ### PF sign-in prerequisites (shared local PingFederate)
 
-The pi.flow sign-in at the shared PF drives client `ai-demo-pf-id-jag` and user `demoUser` (stored in the `aiDemoPfSimplePcv` simple password validator). Three pieces of PF config must match the shared settings file — PF drifts from them over time and the only symptom is `Username or password is incorrect` or `invalid_client`/`invalid_grant` at the token step. Check, in this order:
+The pi.flow sign-in drives the client named by `TRACE_PF_CLIENT_ID` (default `id-jag-kit`, the client ping-shared's PingFederate setup uses) and a user that exists in that PingFederate. It needs three things to match, and the only symptom of a mismatch is `Username or password is incorrect` or `invalid_client`/`invalid_grant` at the token step:
 
-1. **User password** — `demoUser`'s password in the PCV must equal the demo password (`DEMO_USER_PASSWORD` in the AI-DEMO2 api-server env / vault). Read/patch via admin API: `GET/PUT /pf-admin-api/v1/passwordCredentialValidators/aiDemoPfSimplePcv` (set `Password` + `Confirm Password` values on the `demoUser` row).
-2. **Client secret** — `ai-demo-pf-id-jag`'s secret must equal `PF_EXCHANGE_CLIENT_SECRET` in `~/Development/.env`. Verify with `POST /as/token.oauth2 -u ai-demo-pf-id-jag:<secret> -d grant_type=client_credentials` (401 = mismatch); patch via `PUT /pf-admin-api/v1/oauth/clients/ai-demo-pf-id-jag`, `clientAuth: { type: SECRET, secret: ... }`.
-3. **Stub redirect URI** — the client's `redirectUris` must include `http://localhost:6300/auth/callback` (the stub's callback). Additive; existing URIs are unaffected.
+1. **A user** you know the password of in the PingFederate's password credential validator (this lab does not create one).
+2. **The client secret**: `TRACE_PF_CLIENT_SECRET`, or `PF_EXCHANGE_CLIENT_SECRET` in the settings file, must equal the client's secret in PingFederate.
+3. **The redirect URI**: the client's `redirectUris` must include `http://localhost:6300/auth/callback` (this lab's callback; change the port if you changed `PORT`).
 
-Admin auth is `administrator` + `PF_ADMIN_CONSOLE_PASSWORD` (secrets vault) with header `X-XSRF-Header: PingFederate`. Note: 3 failed passwords lock the account for **1 minute** (`LockoutPeriod` in `AccountLockingService`) — wait it out rather than hammering.
+PingFederate locks an account for a short period after 3 failed passwords: wait it out rather than retrying. This sign-in path is UNVERIFIED against a live PingFederate from this repo (tests use stubs only).
+
+## Settings
+
+The lab reads one settings file (default `~/Development/.env`, or the file `STANDALONE_ENV` names; `.env.example` lists the names). Environment variables win over the file where noted.
+
+| Setting | Meaning | Default |
+|---|---|---|
+| `PINGFEDERATE_HOST`, `PINGFEDERATE_PORT` | PingFederate engine probe target | `127.0.0.1`, `4732` (ping-shared) |
+| `PINGGATEWAY_HOST`, `PINGGATEWAY_PORT` or `PINGGATEWAY_HOST_PORT` | PingGateway probe target; `PINGGATEWAY_HOST_PORT` is the name ping-shared uses | `127.0.0.1`, `7809` (ping-shared) |
+| `EXERCISE_PF_BASE`, `EXERCISE_PG_BASE` | base URLs for the "Test" calls | `https://127.0.0.1:4732`, `http://127.0.0.1:<gateway port>` |
+| `PRIVILEGE_GATEWAY_URL` | your own Privilege Agent Gateway (env or settings file); `EXERCISE_PRIV_BASE` overrides it for the "Test" call | none: row reports "not configured" |
+| `PINGONE_*`, `PRIVILEGE_CONSOLE_URL`, `SE_PF_URL` | PingOne SaaS, Privilege console and an SE PingFederate | see `.env.example` |
+
+Run from a clone, `127.0.0.1` is the machine the lab runs on, which is where ping-shared publishes its ports. In the Docker form `127.0.0.1` is the container itself, so `deploy/docker-compose.yml` points the PingFederate and PingGateway targets at `host.docker.internal`. The image trusts the CA in `deploy/pf-rootCA.pem`; ping-shared's PingFederate uses a self-signed certificate, so from the container its TLS calls may be refused (the row then says so). UNVERIFIED against a running ping-shared; run from a clone for the straightforward path.
 
 ## Mock / Real (rule 19)
 

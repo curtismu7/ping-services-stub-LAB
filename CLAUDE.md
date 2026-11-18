@@ -14,7 +14,9 @@ Privilege GW, PingOne, P1-Privilege console, SE-K8s PF). Proves wiring, not feat
 - **Mock/Real is rule 19**: `POST /api/mode {source}`, `GET /api/info` returns mode +
   realAvailable; Real disabled + 409 when settings missing. Toggle must work both
   directions without a restart (the page reloads data; server state switches live).
-- **Settings** come from `~/Development/.env` (ping-shared rule 94 contract).
+- **Settings** come from `~/Development/.env` or the file `STANDALONE_ENV` names (`.env.example`).
+  Defaults are ping-shared's (PF 4732, PingGateway 7809 or `PINGGATEWAY_HOST_PORT`); the
+  Privilege gateway is `PRIVILEGE_GATEWAY_URL`, user-supplied, no default. Never an AI-DEMO2 port.
   Agents never use live creds — the tests stub them.
 - **Loopback-only bind** (PORT 6300), Host check allows 127.0.0.1/localhost/[::1] and
   `<LAB_ALLOWED_HOSTS name>:<PORT>` (compose defaults it to the lab-proxy's name). Writes

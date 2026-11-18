@@ -13,6 +13,15 @@ services:
       # Names besides loopback the stub answers to (as <name>:6300). The default is the Host the family lab-proxy sends.
       LAB_ALLOWED_HOSTS: ${LAB_ALLOWED_HOSTS:-ping-services-stub.local.ping-devops.com}
       PROBE_HOST: host.docker.internal
+      # Inside the container 127.0.0.1 is the container itself; ping-shared publishes on the host.
+      PINGFEDERATE_HOST: host.docker.internal
+      PINGGATEWAY_HOST: host.docker.internal
+      PINGGATEWAY_HOST_PORT: ${PINGGATEWAY_HOST_PORT:-7809}
+      EXERCISE_PF_BASE: https://host.docker.internal:4732
+      EXERCISE_PG_BASE: http://host.docker.internal:${PINGGATEWAY_HOST_PORT:-7809}
+      TRACE_PF_URL: https://host.docker.internal:4732
+      # Your own Privilege gateway (no default). Empty falls through to the settings file.
+      PRIVILEGE_GATEWAY_URL: ${PRIVILEGE_GATEWAY_URL:-}
       STANDALONE_ENV: /settings/.env
     volumes:
       # The one shared settings file (optional; STANDALONE_ENV moves it). bootstrap.sh creates it. If it is missing, Docker

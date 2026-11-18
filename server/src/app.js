@@ -12,6 +12,7 @@ import { pfSigninStart, pfSigninCredentials } from './pfSignin.js';
 import { p1SigninStart, p1SigninCredentials, p1SigninDevice, p1SigninOtp, p1SigninAssertion, p1SigninComplete } from './p1Signin.js';
 import { enrollStart, enrollComplete } from './fido2Enroll.js';
 import { shelfInfo } from './shelfLink.js';
+import { pinggatewayPort, privilegeGatewayBase } from './probes.js';
 
 // SERVICE_MODE: 'real' (default when settings exist) or 'mock' (no outbound calls;
 // probes return canned offline answers). The toggle (rule 19) switches at runtime.
@@ -29,19 +30,20 @@ const MOCK_SERVICES = [
 ];
 
 // Exercise base URLs: ping-shared's fixed ports by default (PF engine 4732 self-signed,
-// PingGateway 7809 plain http). The Privilege gateway has no shared default — it is
-// env-only and its exercise reports honestly when it is not set. Override any of them
-// with EXERCISE_*_BASE to point at another stack.
+// PingGateway 7809 plain http, or ping-shared's PINGGATEWAY_HOST_PORT). The Privilege
+// gateway has no default: the user supplies PRIVILEGE_GATEWAY_URL (environment or the
+// settings file) and its exercise reports honestly when it is not set. Override any of
+// them with EXERCISE_*_BASE to point at another stack.
 const PF_BASE = process.env.EXERCISE_PF_BASE || 'https://127.0.0.1:4732';
-const PG_BASE = process.env.EXERCISE_PG_BASE || 'http://127.0.0.1:7809';
-const PRIV_BASE = process.env.EXERCISE_PRIV_BASE || '';
+const PG_BASE = () => process.env.EXERCISE_PG_BASE || `http://127.0.0.1:${pinggatewayPort()}`;
+const PRIV_BASE = () => process.env.EXERCISE_PRIV_BASE || privilegeGatewayBase(settings);
 
 const EXERCISERS = {
   pingone: () => exercisePingOne(settings),
   'pingone-user': () => exercisePingOneUser(settings),
   pingfederate: () => exercisePingFederate(PF_BASE),
-  pinggateway: () => exercisePingGateway(PG_BASE),
-  'privilege-gateway': () => exercisePrivilegeGateway(PRIV_BASE),
+  pinggateway: () => exercisePingGateway(PG_BASE()),
+  'privilege-gateway': () => exercisePrivilegeGateway(PRIV_BASE()),
   'pingone-privilege': () => exercisePrivilegeConsole(settings),
   'se-pingfederate': () => exerciseSePf(settings),
 };
@@ -416,7 +418,7 @@ pre { background: var(--surface-2); padding: .75rem; border-radius: 6px; overflo
 .rb-claims pre { margin: .35rem 0 0; font-size: .8rem; }
 .tt-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .5rem 0; }
 #tt-signin-dialog[hidden] { display: none; }
-/* Sign-in card: a draggable floating panel with a pop-out button (the AI-DEMO2 DraggableModal pattern). */
+/* Sign-in card: a draggable floating panel with a pop-out button (a draggable-modal pattern). */
 #tt-signin-card { position: fixed; top: 8rem; left: 50%; transform: translateX(-50%); width: min(24rem, 92vw); background: var(--surface); color: var(--text); border: 1px solid var(--border); border-top: 4px solid var(--accent); border-radius: 10px; box-shadow: 0 20px 48px var(--shadow-ink); z-index: 60; }
 #tt-signin-card[hidden] { display: none; }
 .tt-card-bar { display: flex; align-items: center; justify-content: space-between; padding: .45rem .75rem; background: var(--box-dark); color: var(--on-box); border-radius: 6px 6px 0 0; cursor: move; user-select: none; touch-action: none; }
@@ -757,7 +759,7 @@ for (const provider of ['pingone', 'pingfederate']) {
     state.textContent = 'Flow started at ' + providerLabel[provider] + '.';
   };
 }
-// ---- Sign-in card: drag + pop-out (the AI-DEMO2 DraggableModal pattern, vanilla) ----
+// ---- Sign-in card: drag + pop-out (a draggable-modal pattern, vanilla) ----
 (function(){
   const card = document.getElementById('tt-signin-card');
   const bar = document.getElementById('tt-card-bar');
