@@ -16,7 +16,7 @@ jobs:
       - run: npm install
       - run: SERVICE_MODE=mock STANDALONE_ENV=/nonexistent/.env node --test test/*.test.js
       # The vendored shared stylesheet must match the hash pinned when it was last re-vendored.
-      - run: bash scripts/check-ui-standard.sh
+      - run: STANDALONE_UI_CANONICAL_URL=https://raw.githubusercontent.com/curtismu7/AI-DEMO-Standalone/header-standard-2026-11-24/shared/standalone-ui.css bash scripts/check-ui-standard.sh
       - name: gitleaks
         run: |
           curl -sSL -o /tmp/gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz
